@@ -58,6 +58,42 @@ cd ~/ai-devkit
 `qwen3.5:9b-mlx` для кода. На 16 ГБ работают по очереди. Выделенный `qwen3-coder` (30B/19 ГБ)
 в 16 ГБ **не помещается** — вернуться к нему при апгрейде RAM.
 
+### Как их использовать
+
+```bash
+# 1. Прямой чат в терминале
+ollama run gemma4:12b-mlx
+ollama run qwen3.5:9b-mlx
+
+# 2. Как OpenAI-совместимый API (для своих скриптов/агентов)
+#    эндпоинт: http://localhost:11434/v1
+curl http://localhost:11434/v1/chat/completions -d '{
+  "model": "qwen3.5:9b-mlx",
+  "messages": [{"role":"user","content":"напиши тест на функцию X"}]
+}'
+
+# 3. В OpenCode — провайдер "ollama" уже прописан в opencode.jsonc,
+#    выбери модель через /models. Только здесь модель получает MCP + skills.
+```
+
+### Получают ли локальные модели скиллы и MCP? (важно, честно)
+
+**Сами по себе — нет.** Скиллы и MCP принадлежат *агенту* (Claude Code / Codex / OpenCode),
+а не модели. `ollama run` или голый API — это чистый LLM без инструментов.
+
+| Как запускаешь модель | AGENTS.md правила | MCP-серверы | Skills |
+|---|---|---|---|
+| `ollama run` / API напрямую | ❌ | ❌ | ❌ |
+| Внутри **OpenCode** (провайдер ollama) | ✅ | ✅ context7, sequential-thinking | ✅ skills OpenCode |
+| **Claude Code** MCP (context7/github/playwright/…) | — | работают с **моделями Claude**, не с локальными | Claude-скиллы |
+
+Обе локальные модели поддерживают **function-calling** (`ollama show` → capability `tools`),
+поэтому в OpenCode они реально могут вызывать MCP-инструменты. Из практики tool-calling у qwen
+надёжнее — для задач с инструментами бери `qwen3.5:9b-mlx`.
+
+> Итого: 4 MCP, что я добавил в **Claude Code**, обслуживают Claude-сессии. Чтобы *локальные*
+> модели пользовались инструментами — запускай их через **OpenCode**.
+
 ## MCP-серверы
 
 Уже подключены (без авторизации): **context7** (свежая документация фреймворков),

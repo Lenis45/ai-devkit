@@ -2,6 +2,19 @@
   // Глобальный конфиг OpenCode. Секреты (ключи) сюда НЕ вписываем —
   // они живут в ~/.local/share/opencode/auth.json (через `/connect`).
   "$schema": "https://opencode.ai/config.json",
+  // Локальные модели Ollama как провайдер — их можно выбрать в OpenCode
+  // и тогда они получают доступ к MCP (ниже) и к skills OpenCode.
+  "provider": {
+    "ollama": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Ollama (local)",
+      "options": { "baseURL": "http://localhost:11434/v1" },
+      "models": {
+        "qwen3.5:9b-mlx": { "name": "Qwen3.5 9B (код, MLX)" },
+        "gemma4:12b-mlx": { "name": "Gemma 4 12B (чат, MLX)" }
+      }
+    }
+  },
   "mcp": {
     "sequential-thinking": {
       "type": "local",
