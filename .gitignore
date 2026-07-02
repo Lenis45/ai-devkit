@@ -1,0 +1,16 @@
+# Секреты — НИКОГДА не коммитить
+auth.json
+*.auth.json
+.env
+.env.*
+*.key
+*.pem
+*_token
+*secret*
+
+# Локальный мусор
+.DS_Store
+*.log
+*.bak
+node_modules/
+.tmp/

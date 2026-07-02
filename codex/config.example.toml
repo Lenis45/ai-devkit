@@ -1,0 +1,31 @@
+# Пример конфига Codex (~/.codex/config.toml) — БЕЗ секретов и машинно-специфичных путей.
+# Реальный auth (~/.codex/auth.json) в репозиторий не попадает.
+# Скопируй нужные блоки в свой ~/.codex/config.toml.
+
+# Включённые bundled-плагины (skills + MCP + app-коннекторы в одном пакете).
+# Проверить/добавить: в Codex CLI — `$skill-installer`, свои плагины — `@plugin-creator`.
+[plugins."browser@openai-bundled"]
+enabled = true
+
+[plugins."documents@openai-primary-runtime"]
+enabled = true
+
+[plugins."pdf@openai-primary-runtime"]
+enabled = true
+
+[plugins."spreadsheets@openai-primary-runtime"]
+enabled = true
+
+[plugins."presentations@openai-primary-runtime"]
+enabled = true
+
+[plugins."template-creator@openai-primary-runtime"]
+enabled = true
+
+[features]
+# Включи для REPL внутри Codex:
+js_repl = false
+
+[desktop]
+conversationDetailMode = "STEPS_COMMANDS"
+ambient-suggestions-enabled = true

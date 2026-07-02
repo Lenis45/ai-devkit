@@ -1,0 +1,18 @@
+{
+  // Глобальный конфиг OpenCode. Секреты (ключи) сюда НЕ вписываем —
+  // они живут в ~/.local/share/opencode/auth.json (через `/connect`).
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "sequential-thinking": {
+      "type": "local",
+      "command": ["/opt/homebrew/bin/npx", "-y", "@modelcontextprotocol/server-sequential-thinking"],
+      "enabled": true
+    },
+    "context7": {
+      "type": "local",
+      "command": ["/opt/homebrew/bin/npx", "-y", "@upstash/context7-mcp"],
+      "enabled": true,
+      "timeout": 60000
+    }
+  }
+}
