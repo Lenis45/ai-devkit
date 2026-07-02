@@ -44,10 +44,18 @@ fi
 # --- 4. MCP для Claude Code (без auth) -------------------------------------
 if command -v claude >/dev/null 2>&1; then
   say "Добавляю MCP в Claude Code…"
-  claude mcp add context7 -- npx -y @upstash/context7-mcp 2>/dev/null || true
-  claude mcp add sequential-thinking -- npx -y @modelcontextprotocol/server-sequential-thinking 2>/dev/null || true
-  claude mcp add playwright -- npx -y @playwright/mcp@latest 2>/dev/null || true
-  say "GitHub MCP требует токена — добавь вручную: claude mcp add github (см. README)"
+  claude mcp add -s user context7 -- npx -y @upstash/context7-mcp 2>/dev/null || true
+  claude mcp add -s user sequential-thinking -- npx -y @modelcontextprotocol/server-sequential-thinking 2>/dev/null || true
+  claude mcp add -s user playwright -- npx -y @playwright/mcp@latest 2>/dev/null || true
+  # GitHub MCP — если gh залогинен, берём токен автоматически
+  if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+    GHT="$(gh auth token 2>/dev/null)"
+    [ -n "$GHT" ] && claude mcp add -s user --transport http github https://api.githubcopilot.com/mcp \
+      --header "Authorization: Bearer $GHT" 2>/dev/null || true
+    say "GitHub MCP добавлен с токеном gh."
+  else
+    say "gh не залогинен — GitHub MCP пропущен. Позже: gh auth login, затем перезапусти bootstrap."
+  fi
 else
   say "claude CLI не найден — пропускаю MCP."
 fi

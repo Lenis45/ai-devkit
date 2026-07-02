@@ -36,10 +36,10 @@ ai-devkit/
 | Единый `AGENTS.md` | ✅ | Симлинкован в Claude Code, Codex, OpenCode |
 | Локальная чат-модель | ✅ | `gemma4:12b-mlx` (7.7 ГБ) — скачана, `ollama list` видит |
 | Локальный кодер | ✅ | `qwen3.5:9b-mlx` (8.9 ГБ) — скачан |
-| Claude Code MCP | ✅ | context7, sequential-thinking, playwright (без auth) |
+| Claude Code MCP | ✅ | context7, sequential-thinking, playwright, **github** — все 4 `✔ Connected` |
 | OpenCode MCP | ✅ | context7 + sequential-thinking (уже были в конфиге) |
-| Codex плагины | ✅ | browser, documents, pdf, spreadsheets, presentations, template-creator |
-| GitHub MCP | ⚠️ | Требует токен — добавляется вручную (см. ниже) |
+| Codex плагины | ✅ | browser, chrome, computer-use, documents, pdf, spreadsheets, presentations, template-creator |
+| GitHub MCP | ✅ | Подключён через hosted-эндпоинт с токеном `gh` |
 
 ## Развернуть на другой машине (Mac mini)
 
@@ -63,16 +63,31 @@ cd ~/ai-devkit
 Уже подключены (без авторизации): **context7** (свежая документация фреймворков),
 **sequential-thinking** (структурное рассуждение), **playwright** (проверка UI в браузере).
 
-GitHub MCP — самый полезный, но нужен токен:
+**GitHub MCP** подключён через hosted-эндпоинт с токеном `gh` (bootstrap берёт его
+автоматически из `gh auth token`):
 ```bash
-claude mcp add --transport http github https://api.githubcopilot.com/mcp \
-  --header "Authorization: Bearer <YOUR_GITHUB_TOKEN>"
+claude mcp add -s user --transport http github https://api.githubcopilot.com/mcp \
+  --header "Authorization: Bearer $(gh auth token)"
 ```
+Токен хранится в `~/.claude.json` (не в репозитории). Если `gh` обновит OAuth-токен,
+MCP может «протухнуть» — тогда перезапусти команду выше или `bootstrap.sh`.
+
+## Ограничения и честная критика (что стоит знать)
+
+- **16 ГБ RAM — узкое место.** Локальный «кодер» `qwen3.5:9b-mlx` — это сильная *универсальная*
+  модель, а не выделенный кодер: выделенный `qwen3-coder` (30B/19 ГБ) в 16 ГБ не помещается.
+  Для серьёзной локальной разработки 16 ГБ маловато — облачные модели пока сильнее.
+- **Модели не работают одновременно.** Переключение чат↔код требует выгрузки/загрузки (холодный старт).
+- **MCP не запинены по версиям** (`@latest`, `context7-mcp`, `playwright/mcp`) — обновления апстрима
+  теоретически могут что-то сломать. Плюс: всегда свежее. Компромисс осознанный.
+- **`bootstrap.sh` полностью прогонялся только частично** — на чистой машине (Mac mini) end-to-end ещё
+  не проверен, т.к. на мини не был включён Remote Login. Логика идемпотентна и протестирована локально.
+- **GitHub-токен от `gh`** может истечь; для долговечности лучше отдельный PAT со scope `repo`.
 
 ## Безопасность
 
-Секреты (`auth.json`, API-ключи, токены) **в репозиторий не попадают** — см. `.gitignore`.
-Публикуются только конфиги и правила.
+Секреты (`auth.json`, API-ключи, токены, `~/.claude.json`) **в репозиторий не попадают** —
+см. `.gitignore`. Публикуются только конфиги и правила.
 
 ---
 
