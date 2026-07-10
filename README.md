@@ -1,187 +1,219 @@
-# AI Devkit — единая конфигурация локальных AI-агентов на macOS
+# AI Devkit
 
-Единый источник правды для **Claude Code**, **OpenAI Codex**, **OpenCode** и локальных моделей через Ollama (MLX на Apple Silicon).
+Единый devkit для локальных AI-агентов на macOS: **Claude Code**, **OpenAI Codex**, **OpenCode**, **Hermes**, общий слой skills, MCP-серверы и локальные модели через Ollama.
 
-Все агенты ведут себя одинаково: детально, честно, с самопроверкой, задают вопросы и спорят, когда пользователь не прав. Конфигурация развёртывается на любую машину одной командой.
+Цель репозитория простая: одна проверяемая конфигурация, которую можно поставить на новую машину и получить одинаковое поведение агентов без ручного копирования правил, skills и OpenCode-настроек.
+
+Проверено локально: **10 июля 2026** на Apple Silicon.
+
+---
+
+## Что входит
+
+| Слой | Состояние | Назначение |
+|------|-----------|------------|
+| `AGENTS.md` | включен | Единые правила поведения для Claude Code, Codex и OpenCode |
+| `skills/` | 17 локальных skills | Проверенные рабочие навыки для code review, testing, Amori ops, MCP, git, debugging |
+| OpenCode plugins | включены | `@dietrichgebert/ponytail`, `opencode-skills-collection@latest` |
+| OpenCode SkillPointer | включен | 1595+ bundled skills через pointer/vault, без загрузки всего набора в контекст |
+| OpenCode safety filter | включен | Блокирует `offensive` skill-категории; sensitive actions остаются под permission-gate |
+| MCP | включен | Amori, memory, sequential-thinking, optional fetch |
+| Ollama provider | включен | `qwen3.5:9b-mlx`, `gemma4:12b-mlx` для OpenCode |
+| Bootstrap | включен | Симлинки, конфиги, skills sync, Claude MCP и локальные модели |
 
 ---
 
 ## Архитектура
 
-```
+```text
 ai-devkit/
-├── AGENTS.md                 # ★ канонические правила поведения (симлинкуется во все агенты)
+├── AGENTS.md
+├── skills/
+│   ├── agent-tooling-audit/
+│   ├── amori-ops/
+│   ├── code-review/
+│   ├── debugging/
+│   ├── git-safe/
+│   └── ...
 ├── claude-code/
-│   └── settings.json         # тема и базовые настройки Claude Code
+│   └── settings.json
 ├── codex/
-│   └── config.example.toml   # плагины Codex (без секретов)
+│   └── config.example.toml
 ├── opencode/
-│   └── opencode.jsonc        # провайдеры, MCP, плагины OpenCode
+│   ├── opencode.json
+│   └── skill-filter.jsonc
 ├── models/
-│   └── README.md             # локальные модели, размеры, честные оговорки
-├── scripts/
-│   └── bootstrap.sh          # идемпотентное развёртывание на новой машине
-└── README.md
+│   └── README.md
+└── scripts/
+    ├── bootstrap.sh
+    └── sync-skills.sh
 ```
 
-`AGENTS.md` — единственный файл правил. `bootstrap.sh` симлинкует его в:
-- `~/.claude/CLAUDE.md`
-- `~/.codex/AGENTS.md`
-- `~/.config/opencode/AGENTS.md`
+```mermaid
+flowchart LR
+  Repo["ai-devkit"]
+  Rules["AGENTS.md"]
+  Skills["skills/"]
+  Shared["~/.agents/skills"]
+  Codex["~/.codex/skills"]
+  Claude["~/.claude/skills"]
+  OpenCode["~/.config/opencode/skills"]
+  Hermes["Hermes external_dirs"]
 
-Правишь один файл — меняется поведение всех агентов.
+  Repo --> Rules
+  Repo --> Skills
+  Rules --> Claude
+  Rules --> Codex
+  Rules --> OpenCode
+  Skills --> Shared
+  Shared --> Codex
+  Shared --> Claude
+  Shared --> OpenCode
+  Shared --> Hermes
+```
 
 ---
 
-## Текущее состояние (проверено на Apple M4, 16 ГБ)
-
-| Компонент | Статус | Детали |
-|-----------|--------|--------|
-| Единый `AGENTS.md` | ✅ | Симлинкован в Claude Code, Codex, OpenCode |
-| Локальная чат-модель | ✅ | `gemma4:12b-mlx` (7.7 ГБ) |
-| Локальная код-модель | ✅ | `qwen3.5:9b-mlx` (8.9 ГБ) |
-| **OpenCode плагины** | ✅ | `@dietrichgebert/ponytail` (v4.8.4), `opencode-skills-collection@latest` |
-| **OpenCode навыки** | ✅ | `frontend-dev`, `fullstack-dev`, `shader-dev`, `ru-commit` + 6 ponytail-навыков |
-| Claude Code MCP | ✅ | context7, sequential-thinking, playwright, github — все `Connected` |
-| OpenCode MCP | ✅ | context7 + sequential-thinking |
-| Codex плагины | ✅ | browser, chrome, computer-use, documents, pdf, spreadsheets, presentations, template-creator |
-| GitHub MCP | ✅ | Hosted endpoint с токеном из `gh auth token` |
-
----
-
-## Развёртывание на новой машине (Mac mini / любая macOS)
+## Быстрый старт
 
 ```bash
-git clone <this-repo-url> ~/ai-devkit
+git clone https://github.com/Lenis45/ai-devkit.git ~/ai-devkit
 cd ~/ai-devkit
 ./scripts/bootstrap.sh
 ```
 
-Скрипт:
-- Симлинкует `AGENTS.md` во все три агента (бэкапит существующие в `*.bak`)
-- Устанавливает конфиги (не перезаписывает секреты)
-- Качает локальные модели через Ollama
-- Регистрирует MCP-серверы в Claude Code
-- Идемпотентен — можно запускать повторно
+Bootstrap делает:
+
+- симлинкует `AGENTS.md` в Claude Code, Codex и OpenCode;
+- ставит `opencode/opencode.json` и `opencode/skill-filter.jsonc`;
+- синхронизирует `skills/` в `~/.agents/skills`, `~/.codex/skills`, `~/.claude/skills`, `~/.config/opencode/skills`;
+- регистрирует базовые MCP-серверы в Claude Code;
+- подтягивает локальные Ollama-модели, если установлен `ollama`.
+
+Повторный запуск безопасен: скрипты идемпотентны и не копируют секреты.
+
+---
+
+## Shared Skills
+
+Репозиторий хранит доверенный локальный слой skills:
+
+| Skill | Для чего |
+|-------|----------|
+| `agent-tooling-audit` | Аудит Codex, Claude Code, Hermes, OpenCode, MCP и drift |
+| `amori-ops` | Проверка состояния Amori AI-infra, dashboard, очередей, агентов |
+| `amori-project` | Делегирование задач Amori AI-team |
+| `amori-content` | Контент-завод Amori с human approval |
+| `business-process-automation` | Процессная аналитика, automation maps, HITL, audit |
+| `code-review` | Senior code review с фокусом на риски |
+| `commit-pr` | Чистые commit/PR workflow |
+| `debugging` | Root-cause диагностика багов |
+| `git-safe` | Безопасная работа с git |
+| `mcp-tools` | Выбор и использование локальных MCP |
+| `perf` | Measure-first performance workflow |
+| `refactor` | Поведенчески безопасный refactor |
+| `screenshot-product-qa` | UI QA через screenshots и визуальную проверку |
+| `testing` | Осмысленное покрытие и regression checks |
+| `web-research` | Актуальное web research с проверкой источников |
+
+Ручная синхронизация:
+
+```bash
+./scripts/sync-skills.sh
+```
+
+---
+
+## OpenCode
+
+Канонический конфиг: [`opencode/opencode.json`](opencode/opencode.json).
+
+Включено:
+
+- `@dietrichgebert/ponytail` для сдержанного senior-режима;
+- `opencode-skills-collection@latest` для большого каталога community skills;
+- SkillPointer-подход: активные skills в `~/.config/opencode/skills`, полный каталог в `~/.config/opencode/skill-libraries`;
+- safety filter: [`opencode/skill-filter.jsonc`](opencode/skill-filter.jsonc), блокирует offensive skills без поломки SkillPointer;
+- MCP: Amori, memory, sequential-thinking, fetch disabled by default;
+- локальный `ollama` provider с `qwen3.5:9b-mlx` и `gemma4:12b-mlx`.
+
+Проверка:
+
+```bash
+opencode --version
+opencode mcp list
+opencode debug config
+```
 
 ---
 
 ## Локальные модели
 
-Подробно — в [models/README.md](models/README.md). Коротко:
+Подробно: [`models/README.md`](models/README.md).
 
-| Модель | Назначение | Размер | Function-calling |
-|--------|------------|--------|------------------|
-| `gemma4:12b-mlx` | чат, рассуждения | 7.7 ГБ | ✅ |
-| `qwen3.5:9b-mlx` | код, инструменты | 8.9 ГБ | ✅ (надёжнее) |
+| Модель | Назначение | Ограничение |
+|--------|------------|-------------|
+| `qwen3.5:9b-mlx` | код, tools, быстрые задачи | Лучше запускать отдельно от второй модели на 16 ГБ RAM |
+| `gemma4:12b-mlx` | чат, reasoning, черновики | Может создавать swap при параллельной загрузке |
 
-**На 16 ГБ работают по очереди** — одновременная загрузка обеих вызывает своп. Выделенный `qwen3-coder` (30B/19 ГБ) не помещается.
-
-### Как использовать
-
-```bash
-# 1. Прямой чат в терминале (чистый LLM, без инструментов)
-ollama run gemma4:12b-mlx
-ollama run qwen3.5:9b-mlx
-
-# 2. OpenAI-совместимый API (для своих скриптов)
-curl http://localhost:11434/v1/chat/completions -d '{
-  "model": "qwen3.5:9b-mlx",
-  "messages": [{"role":"user","content":"напиши тест на функцию X"}]
-}'
-
-# 3. В OpenCode — выбери провайдер "ollama" через /models
-#    Только тут локальные модели получают MCP + Skills + AGENTS.md правила
-```
-
-### Получают ли локальные модели скиллы и MCP? (честно)
-
-| Запуск | AGENTS.md | MCP | Skills |
-|--------|-----------|-----|--------|
-| `ollama run` / прямой API | ❌ | ❌ | ❌ |
-| **OpenCode (провайдер ollama)** | ✅ | ✅ context7, sequential-thinking | ✅ все навыки OpenCode |
-| Claude Code (MCP) | — | работают с **моделями Claude**, не с локальными | Claude-скиллы |
-
-Обе модели поддерживают function-calling (`ollama show` → capability `tools`). В OpenCode они реально вызывают MCP-инструменты. Практика: `qwen3.5:9b-mlx` надёжнее для задач с инструментами.
+Прямой `ollama run` не получает MCP и skills. Локальные модели получают инструменты через OpenCode, когда выбран provider `ollama`.
 
 ---
 
-## OpenCode — плагины и навыки
+## Проверки после установки
 
-**Конфиг:** `opencode/opencode.jsonc`
-
-### Плагины
-| Плагин | Версия | Назначение |
-|--------|--------|------------|
-| `@dietrichgebert/ponytail` | 4.8.4 | Режим «ленивый сеньор»: YAGNI, stdlib first, минимальный код, корневая причина багов |
-| `opencode-skills-collection` | latest | 270+ готовых навыков (frontend, backend, DevOps, AI, testing, etc.) |
-
-### Навыки (в `~/.config/opencode/skills/` — симлинки/копии при bootstrap)
-| Навык | Тип | Описание |
-|-------|-----|----------|
-| `frontend-dev` | полный | Полноценный фронтенд: UI, анимации, AI-медиа, копирайтинг, generative art |
-| `fullstack-dev` | полный | Backend архитектура + интеграция с фронтом (REST, auth, realtime, файлы, prod) |
-| `shader-dev` | полный | GLSL: ray marching, SDF, флюиды, частицы, процедурная генерация, lighting |
-| `ru-commit` | полный | Conventional Commits на русском |
-| `ponytail` | плагин | Основной режим понитейла |
-| `ponytail-audit` | плагин | Аудит всего репо на over-engineering |
-| `ponytail-debt` | плагин | Учёт техдолгов из `ponytail:` комментариев |
-| `ponytail-gain` | плагин | Метрики экономии кода/времени/денег |
-| `ponytail-help` | плагин | Справочник команд понитейла |
-| `ponytail-review` | плагин | Code review только за over-engineering |
-
-> Category-pointer навыки (указатели на библиотеки) **убраны** — они ссылались на несуществующий vault. Оставлены только рабочие, самодостаточные навыки.
-
-### Полезные команды OpenCode
 ```bash
-# Посмотреть загруженные навыки
-opencode skill list
+codex --version
+claude --version
+hermes --version
+opencode --version
 
-# Запустить понитейл-аудит репо
-opencode run ponytail-audit
+codex mcp list
+claude mcp list
+hermes mcp list
+opencode mcp list
 
-# Посмотреть накопленный техдолг
-opencode run ponytail-debt
+./scripts/sync-skills.sh
 ```
 
----
+Если на машине есть Amori infra, дополнительно:
 
-## MCP-серверы
-
-Уже подключены (без авторизации):
-- **context7** — свежая документация фреймворков/библиотек
-- **sequential-thinking** — структурное рассуждение (Chain of Thought)
-- **playwright** — проверка UI в браузере (только в Claude Code)
-
-**GitHub MCP** — через hosted endpoint с токеном `gh`:
 ```bash
-claude mcp add -s user --transport http github https://api.githubcopilot.com/mcp \
-  --header "Authorization: Bearer $(gh auth token)"
+/Users/denis/ai-infra/scripts/agent_tooling_doctor.sh
 ```
-Токен хранится в `~/.claude.json` (не в репо). При ротации токена `gh` — перезапусти команду или `bootstrap.sh`.
-
----
-
-## Ограничения и честная критика
-
-- **16 ГБ RAM — узкое место.** Локальный «кодер» — сильная универсальная модель, а не выделенный кодер. Выделенный `qwen3-coder` (30B/19 ГБ) не помещается. Для серьёзной локальной разработки 16 ГБ маловато — облачные модели пока сильнее.
-- **Модели не работают одновременно.** Переключение чат↔код требует выгрузки/загрузки (холодный старт).
-- **MCP не запинены по версиям** (`@latest`, `context7-mcp`, `playwright/mcp`) — обновления апстрима теоретически могут что-то сломать. Компромисс осознанный: всегда свежее.
-- **`bootstrap.sh` не прогонялся end-to-end на чистой машине** (Mac mini не имел Remote Login). Логика идемпотентна и протестирована локально.
-- **GitHub-токен от `gh` может истечь**; для долговечности лучше отдельный PAT со scope `repo`.
 
 ---
 
 ## Безопасность
 
-Секреты (`auth.json`, API-ключи, токены, `~/.claude.json`) **в репозиторий не попадают** — см. `.gitignore`. Публикуются только конфиги и правила.
+В репозитории не должно быть:
+
+- API keys, provider tokens, Telegram bot tokens;
+- `.env`, `.local`, session cookies;
+- приватных channel IDs, customer data, личных сообщений;
+- `~/.claude.json`, `auth.json`, OAuth tokens.
+
+Публикуются только переносимые правила, scripts, safe configs и skills без секретов.
 
 ---
 
-## Правила поведения агентов
+## Когда обновлять
 
-Единственный файл, который нужно править — **[AGENTS.md](AGENTS.md)**. Изменения сразу применяются ко всем трём агентам.
+Обновляй этот репозиторий, когда:
 
----
+- добавлен новый локальный skill;
+- изменились правила в `AGENTS.md`;
+- поменялась схема MCP/OpenCode/Hermes;
+- появилась новая стабильная локальная модель;
+- doctor нашел drift между Codex, Claude, Hermes и OpenCode.
 
-*Поддерживается для macOS (Apple Silicon). PR с улучшениями приветствуются.*
+Минимальный release-check:
+
+```bash
+git diff --check
+git status -sb
+./scripts/sync-skills.sh
+```
+
+Перед push дополнительно запускай любой локальный secret scanner, если менялись configs,
+skills или bootstrap-скрипты.

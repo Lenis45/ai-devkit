@@ -27,12 +27,17 @@ link "$REPO/AGENTS.md" "$HOME/.config/opencode/AGENTS.md"
 # --- 2. Конфиги ------------------------------------------------------------
 say "Ставлю конфиги (без секретов)…"
 mkdir -p "$HOME/.config/opencode"
-cp -f "$REPO/opencode/opencode.jsonc" "$HOME/.config/opencode/opencode.jsonc"
+cp -f "$REPO/opencode/opencode.json" "$HOME/.config/opencode/opencode.json"
+cp -f "$REPO/opencode/skill-filter.jsonc" "$HOME/.config/opencode/skill-filter.jsonc"
 mkdir -p "$HOME/.claude"
 # settings.json Claude Code не перезаписываем силой — только если его нет
 [ -f "$HOME/.claude/settings.json" ] || cp "$REPO/claude-code/settings.json" "$HOME/.claude/settings.json"
 
-# --- 3. Локальные модели (Ollama) -----------------------------------------
+# --- 3. Shared skills ------------------------------------------------------
+say "Синхронизирую shared skills…"
+"$REPO/scripts/sync-skills.sh"
+
+# --- 4. Локальные модели (Ollama) -----------------------------------------
 if command -v ollama >/dev/null 2>&1; then
   say "Качаю локальные модели (по очереди, ~16 ГБ суммарно)…"
   ollama pull gemma4:12b-mlx
@@ -41,7 +46,7 @@ else
   say "ollama не найден — пропускаю модели. Установи: brew install ollama"
 fi
 
-# --- 4. MCP для Claude Code (без auth) -------------------------------------
+# --- 5. MCP для Claude Code (без auth) -------------------------------------
 if command -v claude >/dev/null 2>&1; then
   say "Добавляю MCP в Claude Code…"
   claude mcp add -s user context7 -- npx -y @upstash/context7-mcp 2>/dev/null || true
@@ -60,4 +65,4 @@ else
   say "claude CLI не найден — пропускаю MCP."
 fi
 
-say "Готово. Проверь: ollama list ; claude mcp list"
+say "Готово. Проверь: ollama list ; claude mcp list ; opencode mcp list"
