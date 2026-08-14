@@ -4,7 +4,7 @@
 
 Цель репозитория простая: одна проверяемая конфигурация, которую можно поставить на новую машину и получить одинаковое поведение агентов без ручного копирования правил, skills и OpenCode-настроек.
 
-Проверено локально: **10 июля 2026** на Apple Silicon.
+Проверено локально: **14 августа 2026** на Mac mini M4, 16 ГБ.
 
 ---
 
@@ -13,13 +13,14 @@
 | Слой | Состояние | Назначение |
 |------|-----------|------------|
 | `AGENTS.md` | включен | Единые правила поведения для Claude Code, Codex и OpenCode |
-| `skills/` | 17 локальных skills | Проверенные рабочие навыки для code review, testing, Amori ops, MCP, git, debugging |
+| `skills/` | 18 локальных skills | Проверенные навыки, включая cost-aware routing и компактные handoff-пакеты |
 | OpenCode plugins | включены | `@dietrichgebert/ponytail`, `opencode-skills-collection@latest` |
 | OpenCode SkillPointer | включен | 1595+ bundled skills через pointer/vault, без загрузки всего набора в контекст |
 | OpenCode safety filter | включен | Блокирует `offensive` skill-категории; sensitive actions остаются под permission-gate |
 | MCP | включен | Amori, memory, sequential-thinking, optional fetch |
-| Ollama provider | включен | `qwen3.5:9b-mlx`, `gemma4:12b-mlx` для OpenCode |
-| Bootstrap | включен | Симлинки, конфиги, skills sync, Claude MCP и локальные модели |
+| Smart router | включен | `amori-ai`: local → Codex/Claude через подписочные CLI |
+| Ollama provider | включен | `qwen3:1.7b`, `qwen3-vl:2b`, `qwen3:4b`, `amori-hermes:4b` |
+| Bootstrap | включен | Симлинки, configs, skills, router, Claude MCP и локальные модели |
 
 ---
 
@@ -43,9 +44,19 @@ ai-devkit/
 │   ├── opencode.json
 │   └── skill-filter.jsonc
 ├── models/
+│   ├── Modelfile.hermes
 │   └── README.md
+├── router/
+│   ├── amori_ai.py
+│   ├── config.example.json
+│   └── tests/
+├── docs/
+│   └── SMART_ROUTER.md
 └── scripts/
+    ├── amori-ai
     ├── bootstrap.sh
+    ├── configure-hermes-local.py
+    ├── install-router.sh
     └── sync-skills.sh
 ```
 
@@ -59,6 +70,8 @@ flowchart LR
   Claude["~/.claude/skills"]
   OpenCode["~/.config/opencode/skills"]
   Hermes["Hermes external_dirs"]
+  Router["amori-ai router"]
+  Ollama["Local Qwen3"]
 
   Repo --> Rules
   Repo --> Skills
@@ -70,6 +83,9 @@ flowchart LR
   Shared --> Claude
   Shared --> OpenCode
   Shared --> Hermes
+  Router --> Ollama
+  Router --> Codex
+  Router --> Claude
 ```
 
 ---
@@ -87,6 +103,7 @@ Bootstrap делает:
 - симлинкует `AGENTS.md` в Claude Code, Codex и OpenCode;
 - ставит `opencode/opencode.json` и `opencode/skill-filter.jsonc`;
 - синхронизирует `skills/` в `~/.agents/skills`, `~/.codex/skills`, `~/.claude/skills`, `~/.config/opencode/skills`;
+- устанавливает команду `amori-ai` и безопасный user config;
 - регистрирует базовые MCP-серверы в Claude Code;
 - подтягивает локальные Ollama-модели, если установлен `ollama`.
 
@@ -101,6 +118,7 @@ Bootstrap делает:
 | Skill | Для чего |
 |-------|----------|
 | `agent-tooling-audit` | Аудит Codex, Claude Code, Hermes, OpenCode, MCP и drift |
+| `smart-model-routing` | Выбор local/Codex/Claude и компактный handoff без лишнего контекста |
 | `amori-ops` | Проверка состояния Amori AI-infra, dashboard, очередей, агентов |
 | `amori-project` | Делегирование задач Amori AI-team |
 | `amori-content` | Контент-завод Amori с human approval |
@@ -135,7 +153,8 @@ Bootstrap делает:
 - SkillPointer-подход: активные skills в `~/.config/opencode/skills`, полный каталог в `~/.config/opencode/skill-libraries`;
 - safety filter: [`opencode/skill-filter.jsonc`](opencode/skill-filter.jsonc), блокирует offensive skills без поломки SkillPointer;
 - MCP: Amori, memory, sequential-thinking, fetch disabled by default;
-- локальный `ollama` provider с `qwen3.5:9b-mlx` и `gemma4:12b-mlx`.
+- always-on Mac provider с `qwen3:1.7b`, `qwen3-vl:2b`, `qwen3:4b`, `amori-hermes:4b`;
+- optional Windows GPU provider через Tailscale.
 
 Проверка:
 
@@ -147,14 +166,33 @@ opencode debug config
 
 ---
 
+## Smart Router
+
+Одна команда сначала бесплатно классифицирует запрос локальной `qwen3:1.7b`, затем:
+
+- отвечает локально на простые вопросы;
+- вызывает Codex CLI через ChatGPT OAuth для кода, файлов и тестов;
+- вызывает Claude Code через Claude.ai OAuth для архитектуры и глубокого review.
+
+```bash
+amori-ai --route-only "Сравни архитектурные подходы"
+amori-ai --explain "Исправь API и добавь тесты"
+amori-ai --to codex --act --cwd ~/project "Исправь баг"
+amori-ai --doctor
+```
+
+По умолчанию backend не меняет файлы. Изменения разрешаются только через `--act`. Полная схема, failure modes и cost policy: [`docs/SMART_ROUTER.md`](docs/SMART_ROUTER.md).
+
 ## Локальные модели
 
 Подробно: [`models/README.md`](models/README.md).
 
 | Модель | Назначение | Ограничение |
 |--------|------------|-------------|
-| `qwen3.5:9b-mlx` | код, tools, быстрые задачи | Лучше запускать отдельно от второй модели на 16 ГБ RAM |
-| `gemma4:12b-mlx` | чат, reasoning, черновики | Может создавать swap при параллельной загрузке |
+| `qwen3:1.7b` | neural routing и быстрый чат | Не используется для изменения репозиториев |
+| `qwen3-vl:2b` | локальное распознавание фото/скриншотов | Не предназначен для сложного reasoning |
+| `qwen3:4b` | более качественный локальный ответ | Полный Hermes на 4B заметно медленнее direct chat |
+| `amori-hermes:4b` | Hermes, 64K context | Использует те же веса, отдельной копии модели нет |
 
 Прямой `ollama run` не получает MCP и skills. Локальные модели получают инструменты через OpenCode, когда выбран provider `ollama`.
 
@@ -167,6 +205,7 @@ codex --version
 claude --version
 hermes --version
 opencode --version
+amori-ai --doctor
 
 codex mcp list
 claude mcp list
@@ -192,6 +231,8 @@ opencode mcp list
 - `.env`, `.local`, session cookies;
 - приватных channel IDs, customer data, личных сообщений;
 - `~/.claude.json`, `auth.json`, OAuth tokens.
+
+`amori-ai` не извлекает OAuth credentials и не проксирует подписки как API. Платные Hermes fallback отключены; live-проверка подписок запускается только явно через `amori-ai --doctor --live-check`.
 
 Публикуются только переносимые правила, scripts, safe configs и skills без секретов.
 

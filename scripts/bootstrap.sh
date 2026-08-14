@@ -37,16 +37,22 @@ mkdir -p "$HOME/.claude"
 say "Синхронизирую shared skills…"
 "$REPO/scripts/sync-skills.sh"
 
-# --- 4. Локальные модели (Ollama) -----------------------------------------
+# --- 4. Единая точка входа и cost-aware routing ---------------------------
+say "Устанавливаю amori-ai router…"
+"$REPO/scripts/install-router.sh"
+
+# --- 5. Локальные модели (Ollama) -----------------------------------------
 if command -v ollama >/dev/null 2>&1; then
-  say "Качаю локальные модели (по очереди, ~16 ГБ суммарно)…"
-  ollama pull gemma4:12b-mlx
-  ollama pull qwen3.5:9b-mlx
+  say "Качаю локальные модели (по очереди, ~6 ГБ суммарно)…"
+  ollama pull qwen3:1.7b
+  ollama pull qwen3-vl:2b
+  ollama pull qwen3:4b
+  ollama create amori-hermes:4b -f "$REPO/models/Modelfile.hermes"
 else
   say "ollama не найден — пропускаю модели. Установи: brew install ollama"
 fi
 
-# --- 5. MCP для Claude Code (без auth) -------------------------------------
+# --- 6. MCP для Claude Code (без auth) -------------------------------------
 if command -v claude >/dev/null 2>&1; then
   say "Добавляю MCP в Claude Code…"
   claude mcp add -s user context7 -- npx -y @upstash/context7-mcp 2>/dev/null || true
@@ -65,4 +71,4 @@ else
   say "claude CLI не найден — пропускаю MCP."
 fi
 
-say "Готово. Проверь: ollama list ; claude mcp list ; opencode mcp list"
+say "Готово. Проверь: amori-ai --doctor ; ollama list ; claude mcp list ; opencode mcp list"

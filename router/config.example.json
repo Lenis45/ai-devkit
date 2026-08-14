@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "policy": {
+    "default_mode": "ask",
+    "neural_routing": true,
+    "local_first": true,
+    "subscription_fallbacks": true,
+    "max_local_prompt_chars": 6000
+  },
+  "ollama": {
+    "endpoints": [
+      "http://127.0.0.1:11434",
+      "http://[fd7a:115c:a1e0::b43b:954]:11434",
+      "http://100.77.9.84:11434"
+    ],
+    "router_model": "qwen3:1.7b",
+    "answer_model": "qwen3:1.7b",
+    "probe_timeout_seconds": 2,
+    "route_timeout_seconds": 25,
+    "answer_timeout_seconds": 180
+  },
+  "codex": {
+    "command": "codex",
+    "model": "",
+    "ask_reasoning_effort": "low",
+    "act_reasoning_effort": "high"
+  },
+  "claude": {
+    "command": "claude",
+    "model": "",
+    "ask_max_turns": 8,
+    "act_max_turns": 24
+  },
+  "skills": {
+    "roots": [
+      "~/.agents/skills"
+    ],
+    "max_selected": 3
+  },
+  "privacy": {
+    "log_prompts": false,
+    "metrics_file": "~/.local/state/amori-ai/usage.jsonl"
+  }
+}
