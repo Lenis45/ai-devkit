@@ -296,5 +296,45 @@ class SubscriptionFallbackTests(unittest.TestCase):
         codex.assert_not_called()
 
 
+class RoutingContextTests(unittest.TestCase):
+    def test_routing_text_is_classified_without_removing_backend_context(self):
+        config = {
+            "policy": {"subscription_fallbacks": True},
+            "skills": {"roots": [], "max_selected": 3},
+            "privacy": {"metrics_file": ""},
+        }
+        decision = amori_ai.Decision(
+            "hermes", "simple", "quick_answer", 0.9, "test", "rules", []
+        )
+        with (
+            mock.patch.object(
+                amori_ai,
+                "make_decision",
+                return_value=(decision, "http://127.0.0.1:11434", []),
+            ) as classify,
+            mock.patch.object(amori_ai, "invoke_local", return_value="готово") as local,
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            _, answer = amori_ai.handle_request(
+                "Большой системный контекст с упоминанием кода и архитектуры",
+                config,
+                Path.cwd(),
+                "ask",
+                None,
+                True,
+                False,
+                False,
+                False,
+                routing_prompt="Какой сегодня день?",
+            )
+
+        self.assertEqual(answer, "готово")
+        self.assertEqual(classify.call_args.args[0], "Какой сегодня день?")
+        self.assertEqual(
+            local.call_args.args[0],
+            "Большой системный контекст с упоминанием кода и архитектуры",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
