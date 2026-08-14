@@ -96,20 +96,66 @@
     }
   },
   "provider": {
-    "ollama": {
+    "ollama-mac": {
       "npm": "@ai-sdk/openai-compatible",
-      "name": "Ollama (local)",
+      "name": "Ollama (Mac local, always on)",
       "options": {
         "baseURL": "http://localhost:11434/v1"
       },
       "models": {
-        "qwen3.5:9b-mlx": {
-          "name": "Qwen3.5 9B (код, MLX)"
+        "qwen3:1.7b": {
+          "name": "Qwen3 1.7B (routing)"
         },
-        "gemma4:12b-mlx": {
-          "name": "Gemma 4 12B (чат, MLX)"
+        "qwen3-vl:2b": {
+          "name": "Qwen3-VL 2B (local vision)"
+        },
+        "qwen3:4b": {
+          "name": "Qwen3 4B (fast local chat)"
+        },
+        "amori-hermes:4b": {
+          "name": "Qwen3 4B 64K (Hermes)"
         }
       }
+    },
+    "ollama-windows": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Ollama (Windows GPU via Tailscale)",
+      "options": {
+        "baseURL": "http://[fd7a:115c:a1e0::b43b:954]:11434/v1"
+      },
+      "models": {
+        "qwen3.6:35b-a3b-q4_K_M": {
+          "name": "Qwen3.6 35B A3B (analysis)"
+        },
+        "qwen3.6:27b-q4_K_M": {
+          "name": "Qwen3.6 27B (code)"
+        },
+        "gemma4:12b-it-qat": {
+          "name": "Gemma4 12B (fast chat)"
+        }
+      }
+    }
+  },
+  "agent": {
+    "chat-mac": {
+      "description": "Fast private chat on the always-on Mac Ollama",
+      "model": "ollama-mac/qwen3:1.7b"
+    },
+    "hermes-mac": {
+      "description": "Local tool-oriented analysis on the always-on Mac Ollama",
+      "model": "ollama-mac/amori-hermes:4b"
+    },
+    "vision-mac": {
+      "description": "Private image and screenshot analysis on the always-on Mac Ollama",
+      "model": "ollama-mac/qwen3-vl:2b"
+    },
+    "code-windows": {
+      "description": "Local code work on the optional Windows GPU node",
+      "model": "ollama-windows/qwen3.6:27b-q4_K_M"
+    },
+    "analysis-windows": {
+      "description": "Private analysis on the optional Windows GPU node",
+      "model": "ollama-windows/qwen3.6:35b-a3b-q4_K_M"
     }
   }
 }
