@@ -783,9 +783,10 @@ def handle_request(
     route_only: bool,
     output_json: bool,
     history: str = "",
+    routing_prompt: Optional[str] = None,
 ) -> Tuple[Decision, Optional[str]]:
     decision, endpoint, _ = make_decision(
-        prompt, config, mode, forced_provider, disable_neural
+        routing_prompt or prompt, config, mode, forced_provider, disable_neural
     )
     if route_only:
         if output_json:
@@ -1073,6 +1074,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--explain", action="store_true", help="Print routing decision to stderr")
     parser.add_argument("--no-neural-route", action="store_true", help="Use deterministic local rules only")
     parser.add_argument("--cwd", default=os.getcwd(), help="Workspace for Codex or Claude")
+    parser.add_argument(
+        "--routing-text",
+        help="Classify this text while sending the full prompt to the selected backend",
+    )
     parser.add_argument("--config", help="Path to JSON config")
     parser.add_argument("--json", action="store_true", help="Machine-readable output")
     parser.add_argument("--doctor", action="store_true", help="Check commands, auth, skills, and Ollama")
@@ -1110,6 +1115,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             args.explain,
             args.route_only,
             args.json,
+            routing_prompt=args.routing_text,
         )
         return 0
     except RouterError as exc:

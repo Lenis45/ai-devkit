@@ -14,7 +14,7 @@
       "http://100.77.9.84:11434"
     ],
     "router_model": "qwen3:1.7b",
-    "answer_model": "qwen3:1.7b",
+    "answer_model": "qwen3:4b",
     "probe_timeout_seconds": 2,
     "route_timeout_seconds": 25,
     "answer_timeout_seconds": 180
