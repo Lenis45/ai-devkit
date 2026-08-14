@@ -25,6 +25,14 @@ DEFAULT_CONFIG_PATH = Path("~/.config/amori-ai/config.json").expanduser()
 REPO_CONFIG_PATH = Path(__file__).with_name("config.example.json")
 VALID_PROVIDERS = {"hermes", "codex", "claude"}
 VALID_COMPLEXITIES = {"simple", "medium", "complex"}
+PROVIDER_ALIASES = {
+    "local": "hermes",
+    "ollama": "hermes",
+    "claudia": "claude",
+    "anthropic": "claude",
+    "coder": "codex",
+    "openai": "codex",
+}
 
 
 @dataclass
@@ -143,8 +151,14 @@ def find_ollama_endpoint(
     return None, [], checked
 
 
+def strip_thinking(text: str) -> str:
+    if "</think>" in text:
+        text = text.split("</think>", 1)[1]
+    return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+
+
 def strip_json_fence(text: str) -> str:
-    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+    text = strip_thinking(text)
     fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, flags=re.DOTALL)
     if fenced:
         return fenced.group(1)
@@ -177,7 +191,10 @@ def ollama_chat(
     content = message.get("content") if isinstance(message, dict) else None
     if not isinstance(content, str) or not content.strip():
         raise RouterError("Local model returned an empty response")
-    return content.strip()
+    cleaned = strip_thinking(content)
+    if not cleaned:
+        raise RouterError("Local model returned reasoning without a final response")
+    return cleaned
 
 
 def parse_skill_frontmatter(path: Path) -> Optional[Skill]:
@@ -222,7 +239,18 @@ SKILL_HINTS: Dict[str, Tuple[str, ...]] = {
     "web-research": ("найди в интернете", "актуаль", "исследуй", "сравни"),
     "business-process-automation": ("автоматизац", "бизнес-процесс", "workflow"),
     "agent-tooling-audit": ("codex", "claude", "hermes", "opencode", "mcp", "skills"),
-    "amori-ops": ("amori", "амори", "агент", "дашборд", "infra"),
+    "amori-ops": (
+        "amori",
+        "амори",
+        "агент",
+        "дашборд",
+        "infra",
+        "календар",
+        "событ",
+        "лид",
+        "почт",
+        "бот",
+    ),
     "screenshot-product-qa": ("интерфейс", "скрин", "верст", "дизайн", "ui"),
 }
 
@@ -258,6 +286,7 @@ ACTION_WORDS = (
     "создай",
     "запусти",
     "прогони",
+    "проверь",
     "коммит",
     "push",
     "deploy",
@@ -307,6 +336,29 @@ HIGH_RISK_WORDS = (
     "деплой",
     "пуш",
 )
+CURRENT_INFO_WORDS = (
+    "сегодня",
+    "сейчас",
+    "актуаль",
+    "последние новости",
+    "курс валют",
+    "погода",
+    "текущая цена",
+    "кто сейчас",
+)
+CONTENT_WORDS = (
+    "текст",
+    "резюме",
+    "письмо",
+    "сообщени",
+    "пост",
+    "перепиши",
+    "сократи",
+    "поздравлен",
+    "описани",
+    "слоган",
+    "заголов",
+)
 
 
 def rule_classify(prompt: str) -> Decision:
@@ -315,6 +367,7 @@ def rule_classify(prompt: str) -> Decision:
     has_action = any(word in lowered for word in ACTION_WORDS)
     has_code = any(word in lowered for word in CODE_WORDS)
     has_claude = any(word in lowered for word in CLAUDE_WORDS)
+    needs_current_info = any(word in lowered for word in CURRENT_INFO_WORDS)
     high_risk = any(word in lowered for word in HIGH_RISK_WORDS)
     multi_step = len(re.findall(r"(?:^|\s)\d+[.)]|;|\n-", prompt)) >= 2
 
@@ -322,6 +375,8 @@ def rule_classify(prompt: str) -> Decision:
         provider, intent = "codex", "implementation"
     elif has_claude:
         provider, intent = "claude", "architecture"
+    elif needs_current_info:
+        provider, intent = "claude", "current_information"
     elif has_action and len(words) <= 50:
         provider, intent = "hermes", "content_or_quick_action"
     elif has_action:
@@ -381,6 +436,7 @@ def neural_classify(prompt: str, endpoint: str, config: Dict[str, Any]) -> Decis
     except json.JSONDecodeError as exc:
         raise RouterError("Neural router returned invalid JSON") from exc
     provider = str(result.get("provider", "")).lower()
+    provider = PROVIDER_ALIASES.get(provider, provider)
     complexity = str(result.get("complexity", "")).lower()
     if provider not in VALID_PROVIDERS or complexity not in VALID_COMPLEXITIES:
         raise RouterError("Neural router returned unsupported labels")
@@ -399,18 +455,47 @@ def neural_classify(prompt: str, endpoint: str, config: Dict[str, Any]) -> Decis
     )
 
 
-def apply_guardrails(prompt: str, decision: Decision, mode: str) -> Decision:
+def apply_guardrails(
+    prompt: str,
+    decision: Decision,
+    mode: str,
+    provider_locked: bool = False,
+) -> Decision:
     lowered = prompt.lower()
+    has_action = any(word in lowered for word in ACTION_WORDS)
+    has_code = any(word in lowered for word in CODE_WORDS)
+    has_claude = any(word in lowered for word in CLAUDE_WORDS)
+    needs_current_info = any(word in lowered for word in CURRENT_INFO_WORDS)
+    is_content_request = any(word in lowered for word in CONTENT_WORDS)
     high_risk = any(word in lowered for word in HIGH_RISK_WORDS)
     reasons: List[str] = []
 
-    if mode == "act" and decision.provider != "codex":
+    if not provider_locked and has_action and has_code and decision.provider != "codex":
         decision.provider = "codex"
-        reasons.append("workspace actions are executed by Codex")
+        reasons.append("code implementation belongs to Codex")
+    elif not provider_locked and has_claude and decision.provider != "claude":
+        decision.provider = "claude"
+        reasons.append("architecture and product analysis belong to Claude")
+    elif not provider_locked and needs_current_info and decision.provider == "hermes":
+        decision.provider = "claude"
+        decision.complexity = "medium"
+        reasons.append("current information requires a web-capable backend")
+    elif (
+        not provider_locked
+        and has_action
+        and not is_content_request
+        and decision.provider == "hermes"
+    ):
+        decision.provider = "codex"
+        decision.complexity = "medium"
+        reasons.append("operational action requires an execution backend")
+    if not provider_locked and mode == "act" and decision.provider == "hermes":
+        decision.provider = "codex"
+        reasons.append("local lane cannot modify the workspace")
     if high_risk:
         decision.complexity = "complex"
         reasons.append("high-risk operation")
-    if len(prompt) > 6000 and decision.provider == "hermes":
+    if not provider_locked and len(prompt) > 6000 and decision.provider == "hermes":
         decision.provider = "claude"
         decision.complexity = "complex"
         reasons.append("prompt exceeds local quick-answer budget")
@@ -451,7 +536,9 @@ def make_decision(
                 decision.source = "rules-no-local-model"
         else:
             decision = rule_classify(prompt)
-    decision = apply_guardrails(prompt, decision, mode)
+    decision = apply_guardrails(
+        prompt, decision, mode, provider_locked=forced_provider is not None
+    )
     selected = select_skills(
         prompt,
         load_skills(config),
@@ -511,9 +598,45 @@ def run_process(command: Sequence[str], cwd: Path, timeout: int = 3600) -> str:
     except subprocess.TimeoutExpired as exc:
         raise RouterError(f"Backend timed out after {timeout}s") from exc
     if completed.returncode != 0:
-        detail = completed.stderr.strip().splitlines()[-1:] or ["unknown error"]
-        raise RouterError(f"{command[0]} failed: {detail[0]}")
-    return completed.stdout.strip()
+        error_text = completed.stderr.strip() or completed.stdout.strip()
+        lines = [line.strip() for line in error_text.splitlines() if line.strip()]
+        diagnostic = next(
+            (
+                line
+                for line in reversed(lines)
+                if any(
+                    marker in line.lower()
+                    for marker in (
+                        "401",
+                        "authenticate",
+                        "revoked",
+                        "rate limit",
+                        "usage limit",
+                    )
+                )
+            ),
+            None,
+        )
+        detail = diagnostic or (lines[-1] if lines else "unknown error")
+        raise RouterError(f"{command[0]} failed: {detail[:500]}")
+    return completed.stdout.strip() or completed.stderr.strip()
+
+
+def is_recoverable_subscription_error(exc: RouterError) -> bool:
+    message = str(exc).lower()
+    return any(
+        marker in message
+        for marker in (
+            "401",
+            "authenticate",
+            "authentication",
+            "oauth",
+            "revoked",
+            "rate limit",
+            "usage limit",
+            "subscription limit",
+        )
+    )
 
 
 def invoke_codex(
@@ -684,7 +807,27 @@ def handle_request(
         elif decision.provider == "codex":
             answer = invoke_codex(prepared, decision, mode, config, cwd)
         else:
-            answer = invoke_claude(prepared, mode, config, cwd)
+            try:
+                answer = invoke_claude(prepared, mode, config, cwd)
+            except RouterError as exc:
+                fallback_enabled = bool(
+                    config.get("policy", {}).get("subscription_fallbacks", True)
+                )
+                if (
+                    forced_provider is not None
+                    or not fallback_enabled
+                    or not is_recoverable_subscription_error(exc)
+                ):
+                    raise
+                print(
+                    "Claude Code недоступен по подписке; запрос передан в Codex.",
+                    file=sys.stderr,
+                )
+                decision.provider = "codex"
+                decision.source += "+codex-fallback"
+                decision.reason += "; Claude subscription backend unavailable"
+                prepared = backend_prompt(prompt, decision, mode, config, history)
+                answer = invoke_codex(prepared, decision, mode, config, cwd)
         ok = True
     finally:
         duration_ms = int((time.monotonic() - started) * 1000)
@@ -702,7 +845,12 @@ def handle_request(
     return decision, answer
 
 
-def command_doctor(config: Dict[str, Any], config_path: Path, output_json: bool) -> int:
+def command_doctor(
+    config: Dict[str, Any],
+    config_path: Path,
+    output_json: bool,
+    live_check: bool = False,
+) -> int:
     checks: Dict[str, Any] = {
         "config": str(config_path),
         "config_exists": config_path.exists(),
@@ -710,6 +858,7 @@ def command_doctor(config: Dict[str, Any], config_path: Path, output_json: bool)
         "subscriptions": {},
         "ollama": {},
         "skills": len(load_skills(config)),
+        "live": {},
     }
     for command in ("hermes", "codex", "claude"):
         checks["commands"][command] = shutil.which(command)
@@ -739,6 +888,46 @@ def command_doctor(config: Dict[str, Any], config_path: Path, output_json: bool)
         "answer_model": config["ollama"]["answer_model"],
         "answer_model_installed": config["ollama"]["answer_model"] in models,
     }
+    if live_check:
+        smoke_decision = Decision(
+            provider="codex",
+            complexity="simple",
+            intent="health_check",
+            confidence=1.0,
+            reason="Explicit live health check",
+            source="doctor",
+            selected_skills=[],
+        )
+        if endpoint:
+            try:
+                ollama_chat(
+                    endpoint,
+                    str(config["ollama"]["router_model"]),
+                    [{"role": "user", "content": "Reply with OK only. /no_think"}],
+                    timeout=30,
+                    max_tokens=32,
+                )
+                checks["live"]["ollama"] = "ok"
+            except Exception as exc:  # doctor must report every backend
+                checks["live"]["ollama"] = f"failed: {str(exc)[:200]}"
+        try:
+            invoke_codex(
+                "Reply with OK only. Do not modify files.",
+                smoke_decision,
+                "ask",
+                config,
+                Path.cwd(),
+            )
+            checks["live"]["codex"] = "ok"
+        except RouterError as exc:
+            checks["live"]["codex"] = f"failed: {str(exc)[:200]}"
+        try:
+            invoke_claude(
+                "Reply with OK only. Do not modify files.", "ask", config, Path.cwd()
+            )
+            checks["live"]["claude"] = "ok"
+        except RouterError as exc:
+            checks["live"]["claude"] = f"failed: {str(exc)[:200]}"
     if output_json:
         print(json.dumps(checks, ensure_ascii=False, indent=2))
     else:
@@ -746,14 +935,21 @@ def command_doctor(config: Dict[str, Any], config_path: Path, output_json: bool)
         for name, path in checks["commands"].items():
             print(f"{'OK' if path else 'FAIL'} command {name}: {path or 'missing'}")
         print(f"Codex auth: {checks['subscriptions'].get('codex')}")
-        print(f"Claude auth: {checks['subscriptions'].get('claude')}")
+        print(f"Claude auth (reported): {checks['subscriptions'].get('claude')}")
         print(f"Shared skills: {checks['skills']}")
         print(f"Ollama endpoint: {endpoint or 'unavailable'}")
         print(f"Ollama router model: {config['ollama']['router_model']} ({'OK' if checks['ollama']['router_model_installed'] else 'missing'})")
         for line in checked:
             print(f"  {line}")
+        if live_check:
+            print("Live checks (may consume subscription allowance):")
+            for name, status in checks["live"].items():
+                print(f"  {name}: {status}")
+        else:
+            print("Live subscription access not tested; use --doctor --live-check explicitly.")
     required_commands = all(checks["commands"].get(name) for name in ("codex", "claude"))
-    return 0 if required_commands and endpoint else 1
+    live_ok = not live_check or all(status == "ok" for status in checks["live"].values())
+    return 0 if required_commands and endpoint and live_ok else 1
 
 
 def command_stats(config: Dict[str, Any], output_json: bool) -> int:
@@ -786,14 +982,17 @@ def command_stats(config: Dict[str, Any], output_json: bool) -> int:
 
 
 def interactive_chat(args: argparse.Namespace, config: Dict[str, Any], cwd: Path) -> int:
-    print("amori-ai chat. Commands: /route, /to auto|hermes|codex|claude, /act on|off, /new, /exit")
+    print(
+        "amori-ai: локальный помощник с маршрутизацией. "
+        "Команды: /route, /to auto|hermes|codex|claude, /act on|off, /new, /exit"
+    )
     forced = args.provider
     mode = "act" if args.act else "ask"
     show_route = args.explain
     history: List[Tuple[str, str]] = []
     while True:
         try:
-            prompt = input("you> ").strip()
+            prompt = input("вы> ").strip()
         except (EOFError, KeyboardInterrupt):
             print()
             return 0
@@ -803,11 +1002,11 @@ def interactive_chat(args: argparse.Namespace, config: Dict[str, Any], cwd: Path
             return 0
         if prompt == "/new":
             history.clear()
-            print("Context cleared.")
+            print("Контекст очищен.")
             continue
         if prompt == "/route":
             show_route = not show_route
-            print(f"Route explanation: {'on' if show_route else 'off'}")
+            print(f"Показывать маршрут: {'да' if show_route else 'нет'}")
             continue
         if prompt.startswith("/to "):
             value = prompt.split(maxsplit=1)[1].strip().lower()
@@ -816,18 +1015,29 @@ def interactive_chat(args: argparse.Namespace, config: Dict[str, Any], cwd: Path
             elif value in VALID_PROVIDERS:
                 forced = value
             else:
-                print("Use: /to auto|hermes|codex|claude")
+                print("Используйте: /to auto|hermes|codex|claude")
                 continue
-            print(f"Provider: {forced or 'auto'}")
+            print(f"Исполнитель: {forced or 'auto'}")
             continue
         if prompt.startswith("/act "):
             value = prompt.split(maxsplit=1)[1].strip().lower()
             if value not in {"on", "off"}:
-                print("Use: /act on|off")
+                print("Используйте: /act on|off")
                 continue
             mode = "act" if value == "on" else "ask"
-            print(f"Mode: {mode}")
+            print(f"Режим: {mode}")
             continue
+        request_mode = mode
+        if mode == "ask" and any(word in prompt.lower() for word in ACTION_WORDS):
+            try:
+                confirmation = input(
+                    "Запрос может изменить данные или файлы. Выполнить действие? [да/Нет] "
+                )
+            except (EOFError, KeyboardInterrupt):
+                print()
+                confirmation = ""
+            if confirmation.strip().lower() in {"y", "yes", "д", "да"}:
+                request_mode = "act"
         history_text = "\n".join(
             f"User: {user}\nAssistant: {answer}" for user, answer in history[-3:]
         )[-5000:]
@@ -836,7 +1046,7 @@ def interactive_chat(args: argparse.Namespace, config: Dict[str, Any], cwd: Path
                 prompt,
                 config,
                 cwd,
-                mode,
+                request_mode,
                 forced,
                 args.no_neural_route,
                 show_route,
@@ -845,7 +1055,7 @@ def interactive_chat(args: argparse.Namespace, config: Dict[str, Any], cwd: Path
                 history_text,
             )
         except RouterError as exc:
-            print(f"Error: {exc}", file=sys.stderr)
+            print(f"Ошибка: {exc}", file=sys.stderr)
             continue
         if answer:
             history.append((prompt, answer))
@@ -866,6 +1076,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--config", help="Path to JSON config")
     parser.add_argument("--json", action="store_true", help="Machine-readable output")
     parser.add_argument("--doctor", action="store_true", help="Check commands, auth, skills, and Ollama")
+    parser.add_argument(
+        "--live-check",
+        action="store_true",
+        help="With --doctor, call all backends; consumes subscription allowance",
+    )
     parser.add_argument("--stats", action="store_true", help="Show privacy-safe routing metrics")
     return parser
 
@@ -879,7 +1094,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if not cwd.is_dir():
             raise RouterError(f"Workspace does not exist: {cwd}")
         if args.doctor:
-            return command_doctor(config, config_path, args.json)
+            return command_doctor(config, config_path, args.json, args.live_check)
         if args.stats:
             return command_stats(config, args.json)
         if not args.prompt:

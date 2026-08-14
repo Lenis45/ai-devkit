@@ -4,6 +4,7 @@
     "default_mode": "ask",
     "neural_routing": true,
     "local_first": true,
+    "subscription_fallbacks": true,
     "max_local_prompt_chars": 6000
   },
   "ollama": {
@@ -12,8 +13,8 @@
       "http://[fd7a:115c:a1e0::b43b:954]:11434",
       "http://100.77.9.84:11434"
     ],
-    "router_model": "qwen3:4b",
-    "answer_model": "qwen3:4b",
+    "router_model": "qwen3:1.7b",
+    "answer_model": "qwen3:1.7b",
     "probe_timeout_seconds": 2,
     "route_timeout_seconds": 25,
     "answer_timeout_seconds": 180
