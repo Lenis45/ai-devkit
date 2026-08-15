@@ -71,7 +71,7 @@ class RoutingTests(unittest.TestCase):
         decision = amori_ai.rule_classify("Сделай короткое резюме этого абзаца")
         self.assertEqual(decision.provider, "hermes")
 
-    def test_calendar_action_uses_execution_backend(self):
+    def test_calendar_action_uses_native_handler(self):
         decision = amori_ai.Decision(
             provider="hermes",
             complexity="simple",
@@ -84,8 +84,46 @@ class RoutingTests(unittest.TestCase):
         guarded = amori_ai.apply_guardrails(
             "Добавь встречу в календарь на завтра", decision, "ask"
         )
-        self.assertEqual(guarded.provider, "codex")
-        self.assertEqual(guarded.complexity, "medium")
+        contracted = amori_ai.apply_execution_contract(
+            "Добавь встречу в календарь на завтра", guarded, "ask"
+        )
+        self.assertEqual(contracted.provider, "hermes")
+        self.assertEqual(contracted.execution_handler, "calendar")
+        self.assertEqual(contracted.target_device, "mac-mini")
+
+    def test_calendar_contract_separates_reasoning_from_execution(self):
+        config, _path = amori_ai.load_config()
+        decision, _endpoint, _checked = amori_ai.make_decision(
+            "Добавь встречу в календарь на завтра в 10:00",
+            config,
+            "act",
+            disable_neural=True,
+        )
+
+        self.assertEqual(decision.provider, "hermes")
+        self.assertEqual(decision.execution_handler, "calendar")
+        self.assertIn("action_receipt", decision.expected_outputs)
+
+    def test_image_generation_routes_to_codex_artifact_handler(self):
+        config, _path = amori_ai.load_config()
+        decision, _endpoint, _checked = amori_ai.make_decision(
+            "Создай изображение ошейника на белом фоне",
+            config,
+            "act",
+            disable_neural=True,
+        )
+
+        self.assertEqual(decision.provider, "codex")
+        self.assertEqual(decision.execution_handler, "codex_imagegen")
+        self.assertIn("image", decision.expected_outputs)
+
+    def test_email_action_has_high_level_native_receipt_contract(self):
+        decision = amori_ai.rule_classify("Отправь письмо лиду 42")
+        decision = amori_ai.apply_guardrails("Отправь письмо лиду 42", decision, "act")
+        decision = amori_ai.apply_execution_contract("Отправь письмо лиду 42", decision, "act")
+
+        self.assertEqual(decision.execution_handler, "email")
+        self.assertIn("action_receipt", decision.expected_outputs)
 
     def test_content_action_can_stay_local(self):
         decision = amori_ai.Decision(
