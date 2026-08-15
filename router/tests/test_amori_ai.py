@@ -114,8 +114,21 @@ class RoutingTests(unittest.TestCase):
         )
 
         self.assertEqual(decision.provider, "codex")
-        self.assertEqual(decision.execution_handler, "codex_imagegen")
+        self.assertEqual(decision.execution_handler, "image_generation")
         self.assertIn("image", decision.expected_outputs)
+
+    def test_image_generation_allows_descriptive_words_between_verb_and_noun(self):
+        config, _path = amori_ai.load_config()
+        decision, _endpoint, _checked = amori_ai.make_decision(
+            "Создай простое квадратное изображение: чёрный круг на белом фоне",
+            config,
+            "ask",
+            disable_neural=True,
+        )
+
+        self.assertEqual(decision.provider, "codex")
+        self.assertEqual(decision.execution_handler, "image_generation")
+        self.assertEqual(decision.expected_outputs, ["text", "image"])
 
     def test_email_action_has_high_level_native_receipt_contract(self):
         decision = amori_ai.rule_classify("Отправь письмо лиду 42")

@@ -379,7 +379,20 @@ IMAGE_GENERATION_WORDS = (
     "сгенерируй изображ", "сгенерируй картин", "создай изображ", "создай картин",
     "нарисуй", "логотип", "imagegen",
 )
+IMAGE_GENERATION_VERBS = ("сгенерируй", "создай", "нарисуй", "сделай", "generate", "create", "draw")
+IMAGE_GENERATION_NOUNS = ("изображ", "картин", "иллюстрац", "баннер", "обложк", "постер", "image", "picture")
 NATIVE_HANDLERS = {"calendar", "crm", "email", "notes", "content_factory", "project_team"}
+
+
+def is_image_generation_request(prompt: str) -> bool:
+    text = prompt.lower()
+    return (
+        any(word in text for word in IMAGE_GENERATION_WORDS)
+        or (
+            any(word in text for word in IMAGE_GENERATION_VERBS)
+            and any(word in text for word in IMAGE_GENERATION_NOUNS)
+        )
+    )
 
 
 def detect_execution_handler(prompt: str, provider: str) -> str:
@@ -397,8 +410,8 @@ def detect_execution_handler(prompt: str, provider: str) -> str:
         return "content_factory"
     if any(word in text for word in ("запусти проект", "поручи команде", "декомпозируй проект")):
         return "project_team"
-    if any(word in text for word in IMAGE_GENERATION_WORDS):
-        return "codex_imagegen"
+    if is_image_generation_request(text):
+        return "image_generation"
     return {"hermes": "local_answer", "claude": "claude_cli", "codex": "codex_cli"}[provider]
 
 
@@ -416,8 +429,8 @@ def apply_execution_contract(prompt: str, decision: Decision, mode: str) -> Deci
     decision.execution_handler = handler
     decision.action_mode = mode
     decision.risk_level = _risk_level(prompt, handler, mode)
-    if handler == "codex_imagegen":
-        decision.required_capabilities = ["codex_subscription", "image_generation", "artifact_write"]
+    if handler == "image_generation":
+        decision.required_capabilities = ["image_generation", "artifact_write"]
         decision.expected_outputs = ["text", "image"]
         decision.target_device = "mac-mini"
     elif handler in NATIVE_HANDLERS:
