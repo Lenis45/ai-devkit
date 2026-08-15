@@ -7,6 +7,9 @@ CONFIG_DIR="$HOME/.config/amori-ai"
 
 mkdir -p "$BIN_DIR" "$CONFIG_DIR"
 ln -sfn "$REPO/scripts/amori-ai" "$BIN_DIR/amori-ai"
+ln -sfn "$REPO/scripts/amori-request" "$BIN_DIR/amori-request"
+ln -sfn "$REPO/scripts/amori-hermes" "$BIN_DIR/amori-hermes"
+ln -sfn "$REPO/scripts/amori-gateway-worker" "$BIN_DIR/amori-gateway-worker"
 
 if [[ ! -f "$CONFIG_DIR/config.json" ]]; then
   cp "$REPO/router/config.example.json" "$CONFIG_DIR/config.json"
@@ -15,7 +18,7 @@ else
   echo "Kept existing $CONFIG_DIR/config.json"
 fi
 
-echo "Installed $BIN_DIR/amori-ai"
+echo "Installed amori-ai, amori-request, amori-hermes, and amori-gateway-worker"
 if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
   echo "Add to ~/.zshrc: export PATH=\"$BIN_DIR:\$PATH\""
 fi
