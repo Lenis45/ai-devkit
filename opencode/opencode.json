@@ -2,12 +2,13 @@
   "$schema": "https://opencode.ai/config.json",
   "autoupdate": true,
   "username": "denis",
+  "default_agent": "amori",
   "server": {
     "hostname": "127.0.0.1"
   },
   "plugin": [
-    "@dietrichgebert/ponytail",
-    "opencode-skills-collection@latest"
+    "opencode-skills-collection@latest",
+    "/Users/denis/.config/opencode/plugins/amori-gateway.js"
   ],
   "compaction": {
     "auto": true,
@@ -92,7 +93,7 @@
       "command": [
         "/Users/denis/ai-infra/mcp/run-fetch.sh"
       ],
-      "enabled": false
+      "enabled": true
     }
   },
   "provider": {
@@ -117,26 +118,51 @@
         }
       }
     },
-    "ollama-windows": {
+    "ollama": {
       "npm": "@ai-sdk/openai-compatible",
-      "name": "Ollama (Windows GPU via Tailscale)",
+      "name": "Ollama (denis-k via Tailscale)",
       "options": {
         "baseURL": "http://[fd7a:115c:a1e0::b43b:954]:11434/v1"
       },
       "models": {
         "qwen3.6:35b-a3b-q4_K_M": {
-          "name": "Qwen3.6 35B A3B (analysis)"
+          "name": "Qwen3.6 35B A3B Q4_K_M (универсальный анализ)"
         },
         "qwen3.6:27b-q4_K_M": {
-          "name": "Qwen3.6 27B (code)"
+          "name": "Qwen3.6 27B Q4_K_M (код и сложные задачи)"
         },
         "gemma4:12b-it-qat": {
-          "name": "Gemma4 12B (fast chat)"
+          "name": "Gemma4 12B IT QAT (быстрый чат)"
         }
+      }
+    },
+    "ollama-ipv4-fallback": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Ollama IPv4 fallback (when Mac VPN route is fixed)",
+      "options": {"baseURL": "http://100.77.9.84:11434/v1"},
+      "models": {
+        "qwen3.6:35b-a3b-q4_K_M": {"name": "Qwen3.6 35B A3B Q4_K_M (универсальный анализ)"},
+        "qwen3.6:27b-q4_K_M": {"name": "Qwen3.6 27B Q4_K_M (код и сложные задачи)"},
+        "gemma4:12b-it-qat": {"name": "Gemma4 12B IT QAT (быстрый чат)"}
       }
     }
   },
+  "skills": {
+    "paths": [
+      "/Users/denis/.agents/skills",
+      "/Users/denis/.config/opencode/skills",
+      "/Users/denis/.cache/opencode/packages/@dietrichgebert/ponytail@latest/node_modules/@dietrichgebert/ponytail/skills"
+    ]
+  },
   "agent": {
+    "amori": {
+      "description": "Unified Amori entry point with automatic local/Codex/Claude routing",
+      "mode": "primary",
+      "model": "ollama-mac/qwen3:1.7b",
+      "tools": {"*": false},
+      "maxSteps": 2,
+      "prompt": "The Amori gateway hook replaces every user message with a completed result. Return the text after [AMORI_GATEWAY_RESULT] exactly and never solve a task yourself."
+    },
     "chat-mac": {
       "description": "Fast private chat on the always-on Mac Ollama",
       "model": "ollama-mac/qwen3:1.7b"
@@ -149,13 +175,17 @@
       "description": "Private image and screenshot analysis on the always-on Mac Ollama",
       "model": "ollama-mac/qwen3-vl:2b"
     },
-    "code-windows": {
-      "description": "Local code work on the optional Windows GPU node",
-      "model": "ollama-windows/qwen3.6:27b-q4_K_M"
+    "code-local": {
+      "description": "Local code work on denis-k Ollama through Tailscale IPv6",
+      "model": "ollama/qwen3.6:27b-q4_K_M"
     },
-    "analysis-windows": {
-      "description": "Private analysis on the optional Windows GPU node",
-      "model": "ollama-windows/qwen3.6:35b-a3b-q4_K_M"
+    "analysis-local": {
+      "description": "Private local analysis on denis-k Ollama through Tailscale IPv6",
+      "model": "ollama/qwen3.6:35b-a3b-q4_K_M"
+    },
+    "chat-local": {
+      "description": "Fast local chat on denis-k Ollama through Tailscale IPv6",
+      "model": "ollama/gemma4:12b-it-qat"
     }
   }
 }
