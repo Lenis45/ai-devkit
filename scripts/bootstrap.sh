@@ -29,6 +29,8 @@ say "Ставлю конфиги (без секретов)…"
 mkdir -p "$HOME/.config/opencode"
 cp -f "$REPO/opencode/opencode.json" "$HOME/.config/opencode/opencode.json"
 cp -f "$REPO/opencode/skill-filter.jsonc" "$HOME/.config/opencode/skill-filter.jsonc"
+mkdir -p "$HOME/.config/opencode/plugins"
+cp -f "$REPO/opencode/plugins/amori-gateway.js" "$HOME/.config/opencode/plugins/amori-gateway.js"
 mkdir -p "$HOME/.claude"
 # settings.json Claude Code не перезаписываем силой — только если его нет
 [ -f "$HOME/.claude/settings.json" ] || cp "$REPO/claude-code/settings.json" "$HOME/.claude/settings.json"

@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "policy": {
     "default_mode": "ask",
     "neural_routing": true,

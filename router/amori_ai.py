@@ -25,6 +25,7 @@ DEFAULT_CONFIG_PATH = Path("~/.config/amori-ai/config.json").expanduser()
 REPO_CONFIG_PATH = Path(__file__).with_name("config.example.json")
 VALID_PROVIDERS = {"hermes", "codex", "claude"}
 VALID_COMPLEXITIES = {"simple", "medium", "complex"}
+CONTRACT_VERSION = 2
 PROVIDER_ALIASES = {
     "local": "hermes",
     "ollama": "hermes",
@@ -44,6 +45,18 @@ class Decision:
     reason: str
     source: str
     selected_skills: List[str]
+    execution_handler: str = "local_answer"
+    risk_level: str = "low"
+    action_mode: str = "ask"
+    required_capabilities: List[str] = None
+    expected_outputs: List[str] = None
+    target_device: str = "auto"
+
+    def __post_init__(self) -> None:
+        if self.required_capabilities is None:
+            self.required_capabilities = []
+        if self.expected_outputs is None:
+            self.expected_outputs = ["text"]
 
 
 @dataclass
@@ -360,6 +373,84 @@ CONTENT_WORDS = (
     "заголов",
 )
 
+CALENDAR_WORDS = ("календар", "встреч", "созвон", "мероприят", "событ", "звонок")
+CALENDAR_ACTION_WORDS = ("добав", "постав", "заплан", "перенеси", "измени", "исправ", "удали", "отмени")
+IMAGE_GENERATION_WORDS = (
+    "сгенерируй изображ", "сгенерируй картин", "создай изображ", "создай картин",
+    "нарисуй", "логотип", "imagegen",
+)
+IMAGE_GENERATION_VERBS = ("сгенерируй", "создай", "нарисуй", "сделай", "generate", "create", "draw")
+IMAGE_GENERATION_NOUNS = ("изображ", "картин", "иллюстрац", "баннер", "обложк", "постер", "image", "picture")
+NATIVE_HANDLERS = {"calendar", "crm", "email", "notes", "content_factory", "project_team"}
+
+
+def is_image_generation_request(prompt: str) -> bool:
+    text = prompt.lower()
+    return (
+        any(word in text for word in IMAGE_GENERATION_WORDS)
+        or (
+            any(word in text for word in IMAGE_GENERATION_VERBS)
+            and any(word in text for word in IMAGE_GENERATION_NOUNS)
+        )
+    )
+
+
+def detect_execution_handler(prompt: str, provider: str) -> str:
+    """Separate the model that reasons from the system that performs the action."""
+    text = prompt.lower()
+    if any(word in text for word in CALENDAR_WORDS) and any(word in text for word in CALENDAR_ACTION_WORDS):
+        return "calendar"
+    if "лид" in text and any(word in text for word in ("добав", "обнов", "покажи", "статус", "follow-up", "фоллоу")):
+        return "crm"
+    if "пись" in text and any(word in text for word in ("отправ", "разошли", "рассыл")):
+        return "email"
+    if any(word in text for word in ("сохрани замет", "запиши замет", "добавь замет")):
+        return "notes"
+    if any(word in text for word in ("контент-завод", "серия пост", "контент план", "контент-план")):
+        return "content_factory"
+    if any(word in text for word in ("запусти проект", "поручи команде", "декомпозируй проект")):
+        return "project_team"
+    if is_image_generation_request(text):
+        return "image_generation"
+    return {"hermes": "local_answer", "claude": "claude_cli", "codex": "codex_cli"}[provider]
+
+
+def _risk_level(prompt: str, handler: str, mode: str) -> str:
+    text = prompt.lower()
+    if any(word in text for word in ("парол", "секрет", "токен", "оплат", "удал", "опубликуй", "деплой")):
+        return "high"
+    if mode == "act" or handler in NATIVE_HANDLERS:
+        return "medium"
+    return "low"
+
+
+def apply_execution_contract(prompt: str, decision: Decision, mode: str) -> Decision:
+    handler = detect_execution_handler(prompt, decision.provider)
+    decision.execution_handler = handler
+    decision.action_mode = mode
+    decision.risk_level = _risk_level(prompt, handler, mode)
+    if handler == "image_generation":
+        decision.required_capabilities = ["image_generation", "artifact_write"]
+        decision.expected_outputs = ["text", "image"]
+        decision.target_device = "mac-mini"
+    elif handler in NATIVE_HANDLERS:
+        decision.required_capabilities = [handler]
+        decision.expected_outputs = ["text", "action_receipt"]
+        decision.target_device = "mac-mini"
+    elif handler == "codex_cli":
+        decision.required_capabilities = ["codex_subscription"]
+        decision.expected_outputs = ["text"] if mode == "ask" else ["text", "evidence"]
+        decision.target_device = "current"
+    elif handler == "claude_cli":
+        decision.required_capabilities = ["claude_subscription"]
+        decision.expected_outputs = ["text"]
+        decision.target_device = "current"
+    else:
+        decision.required_capabilities = ["ollama"]
+        decision.expected_outputs = ["text"]
+        decision.target_device = "auto"
+    return decision
+
 
 def rule_classify(prompt: str) -> Decision:
     lowered = prompt.lower()
@@ -468,6 +559,7 @@ def apply_guardrails(
     needs_current_info = any(word in lowered for word in CURRENT_INFO_WORDS)
     is_content_request = any(word in lowered for word in CONTENT_WORDS)
     high_risk = any(word in lowered for word in HIGH_RISK_WORDS)
+    handler = detect_execution_handler(prompt, decision.provider)
     reasons: List[str] = []
 
     if not provider_locked and has_action and has_code and decision.provider != "codex":
@@ -485,11 +577,17 @@ def apply_guardrails(
         and has_action
         and not is_content_request
         and decision.provider == "hermes"
+        and handler not in NATIVE_HANDLERS
     ):
         decision.provider = "codex"
         decision.complexity = "medium"
         reasons.append("operational action requires an execution backend")
-    if not provider_locked and mode == "act" and decision.provider == "hermes":
+    if (
+        not provider_locked
+        and mode == "act"
+        and decision.provider == "hermes"
+        and handler not in NATIVE_HANDLERS
+    ):
         decision.provider = "codex"
         reasons.append("local lane cannot modify the workspace")
     if high_risk:
@@ -545,6 +643,7 @@ def make_decision(
         int(config.get("skills", {}).get("max_selected", 3)),
     )
     decision.selected_skills = [skill.name for skill in selected]
+    decision = apply_execution_contract(prompt, decision, mode)
     return decision, endpoint, checked
 
 
@@ -768,6 +867,7 @@ def format_decision(decision: Decision) -> str:
     return (
         f"route={decision.provider} complexity={decision.complexity} "
         f"intent={decision.intent} confidence={decision.confidence:.2f}\n"
+        f"handler={decision.execution_handler} risk={decision.risk_level} mode={decision.action_mode}\n"
         f"source={decision.source}\nreason={decision.reason}\nskills={skills}"
     )
 
@@ -836,7 +936,14 @@ def handle_request(
     if output_json:
         print(
             json.dumps(
-                {"decision": asdict(decision), "answer": answer},
+                {
+                    "contract_version": CONTRACT_VERSION,
+                    "status": "completed",
+                    "decision": asdict(decision),
+                    "answer": answer,
+                    "artifacts": [],
+                    "evidence": [],
+                },
                 ensure_ascii=False,
                 indent=2,
             )
