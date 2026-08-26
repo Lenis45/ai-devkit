@@ -26,9 +26,20 @@ class GatewayError(RuntimeError):
     pass
 
 
+def default_broker_endpoint() -> str:
+    hostname = socket.gethostname().lower()
+    return (
+        "http://127.0.0.1:18110"
+        if "macbook" in hostname
+        else "http://100.66.130.21:8110"
+    )
+
+
 class GatewayClient:
     def __init__(self, endpoint: str = "", token: str = "") -> None:
-        self.endpoint = (endpoint or os.getenv("AMORI_BROKER_URL") or "http://100.66.130.21:8110").rstrip("/")
+        self.endpoint = (
+            endpoint or os.getenv("AMORI_BROKER_URL") or default_broker_endpoint()
+        ).rstrip("/")
         self.token = token or os.getenv("AMORI_BROKER_TOKEN", "").strip() or self._read_token()
         if not self.token:
             raise GatewayError("Broker token is missing")

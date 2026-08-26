@@ -681,7 +681,26 @@ User request:
 {prompt}"""
 
 
-def run_process(command: Sequence[str], cwd: Path, timeout: int = 3600) -> str:
+def backend_environment(config: Dict[str, Any]) -> Optional[Dict[str, str]]:
+    proxy_url = str(config.get("proxy_url", "")).strip()
+    if not proxy_url:
+        return None
+    environment = os.environ.copy()
+    environment["HTTP_PROXY"] = proxy_url
+    environment["HTTPS_PROXY"] = proxy_url
+    environment["ALL_PROXY"] = proxy_url
+    environment["NO_PROXY"] = str(
+        config.get("no_proxy", "127.0.0.1,localhost,::1")
+    )
+    return environment
+
+
+def run_process(
+    command: Sequence[str],
+    cwd: Path,
+    timeout: int = 3600,
+    env: Optional[Dict[str, str]] = None,
+) -> str:
     try:
         completed = subprocess.run(
             list(command),
@@ -691,6 +710,7 @@ def run_process(command: Sequence[str], cwd: Path, timeout: int = 3600) -> str:
             text=True,
             timeout=timeout,
             check=False,
+            env=env,
         )
     except FileNotFoundError as exc:
         raise RouterError(f"Command not found: {command[0]}") from exc
@@ -742,13 +762,42 @@ def invoke_codex(
     prompt: str, decision: Decision, mode: str, config: Dict[str, Any], cwd: Path
 ) -> str:
     codex_config = config["codex"]
-    sandbox = "read-only" if mode == "ask" else "workspace-write"
     effort = codex_config[
         "ask_reasoning_effort" if mode == "ask" else "act_reasoning_effort"
     ]
     with tempfile.NamedTemporaryFile(prefix="amori-ai-", suffix=".txt", delete=False) as tmp:
         output_path = Path(tmp.name)
-    command = [
+    command = build_codex_command(prompt, mode, codex_config, cwd, output_path, effort)
+    try:
+        run_process(command, cwd, env=backend_environment(codex_config))
+        answer = output_path.read_text(encoding="utf-8").strip()
+    finally:
+        output_path.unlink(missing_ok=True)
+    if not answer:
+        raise RouterError("Codex returned an empty response")
+    return answer
+
+
+def build_codex_command(
+    prompt: str,
+    mode: str,
+    codex_config: Dict[str, Any],
+    cwd: Path,
+    output_path: Path,
+    effort: Optional[str] = None,
+) -> List[str]:
+    sandbox_key = "ask_sandbox" if mode == "ask" else "act_sandbox"
+    legacy_default = "read-only" if mode == "ask" else "workspace-write"
+    sandbox = str(codex_config.get(sandbox_key, legacy_default)).strip()
+    allowed_sandboxes = {"read-only", "workspace-write", "danger-full-access"}
+    if sandbox not in allowed_sandboxes:
+        raise RouterError(f"Unsupported Codex sandbox: {sandbox!r}")
+    selected_effort = effort or str(
+        codex_config[
+            "ask_reasoning_effort" if mode == "ask" else "act_reasoning_effort"
+        ]
+    )
+    command: List[str] = [
         str(codex_config.get("command", "codex")),
         "exec",
         "--ephemeral",
@@ -759,20 +808,23 @@ def invoke_codex(
         "--output-last-message",
         str(output_path),
         "--config",
-        f'model_reasoning_effort="{effort}"',
+        f'model_reasoning_effort="{selected_effort}"',
     ]
+    if sandbox == "workspace-write" and bool(
+        codex_config.get("workspace_network_access", False)
+    ):
+        command.extend(
+            ["--config", "sandbox_workspace_write.network_access=true"]
+        )
+    for server in codex_config.get("disabled_mcp_servers", []):
+        name = str(server).strip()
+        if name and re.fullmatch(r"[A-Za-z0-9_-]+", name):
+            command.extend(["--config", f"mcp_servers.{name}.enabled=false"])
     model = str(codex_config.get("model", "")).strip()
     if model:
         command.extend(["--model", model])
     command.append(prompt)
-    try:
-        run_process(command, cwd)
-        answer = output_path.read_text(encoding="utf-8").strip()
-    finally:
-        output_path.unlink(missing_ok=True)
-    if not answer:
-        raise RouterError("Codex returned an empty response")
-    return answer
+    return command
 
 
 def invoke_claude(
@@ -785,6 +837,10 @@ def invoke_claude(
     )
     command = [
         str(claude_config.get("command", "claude")),
+    ]
+    if bool(claude_config.get("safe_mode", True)):
+        command.append("--safe-mode")
+    command.extend([
         "--print",
         prompt,
         "--output-format",
@@ -793,11 +849,11 @@ def invoke_claude(
         permission_mode,
         "--max-turns",
         str(max_turns),
-    ]
+    ])
     model = str(claude_config.get("model", "")).strip()
     if model:
         command.extend(["--model", model])
-    return run_process(command, cwd)
+    return run_process(command, cwd, env=backend_environment(claude_config))
 
 
 def invoke_local(
