@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
 import re
@@ -20,10 +21,46 @@ from gateway_client import GatewayClient, GatewayError
 
 WORKER_ID = os.getenv("AMORI_WORKER_ID", f"{socket.gethostname().lower()}-subscriptions")
 DEVICE = os.getenv("AMORI_WORKER_DEVICE", "macbook")
-CAPABILITIES = ["ollama", "codex_subscription", "claude_subscription", "artifact_write"]
+BASE_CAPABILITIES = ["ollama", "artifact_write"]
 SAFE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".pdf", ".docx", ".xlsx", ".csv", ".txt", ".md", ".pptx", ".zip"}
 RUNTIME_INFO_TTL_SECONDS = 300
+CLAUDE_PROFILE_MAX_AGE_SECONDS = 24 * 60 * 60
 _runtime_info_cache: tuple[float, dict, dict] | None = None
+
+
+def _jwt_is_fresh(token: object, minimum_ttl_seconds: int = 60) -> bool:
+    if not isinstance(token, str):
+        return False
+    parts = token.split(".")
+    if len(parts) != 3:
+        return False
+    try:
+        payload = json.loads(
+            base64.urlsafe_b64decode(parts[1] + "=" * (-len(parts[1]) % 4))
+        )
+        return float(payload["exp"]) > time.time() + minimum_ttl_seconds
+    except (ValueError, KeyError, TypeError, json.JSONDecodeError):
+        return False
+
+
+def _codex_token_is_fresh() -> bool:
+    auth_path = Path.home() / ".codex/auth.json"
+    try:
+        payload = json.loads(auth_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    tokens = payload.get("tokens")
+    return isinstance(tokens, dict) and _jwt_is_fresh(tokens.get("access_token"))
+
+
+def _claude_profile_is_fresh() -> bool:
+    profile_path = Path.home() / ".claude.json"
+    try:
+        payload = json.loads(profile_path.read_text(encoding="utf-8"))
+        fetched_at_ms = float((payload.get("oauthAccount") or {})["profileFetchedAt"])
+    except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+        return False
+    return fetched_at_ms / 1000 > time.time() - CLAUDE_PROFILE_MAX_AGE_SECONDS
 
 
 def _version(command: str) -> str:
@@ -34,15 +71,53 @@ def _version(command: str) -> str:
         return "unavailable"
 
 
+def _authenticated(command: str) -> bool:
+    executable = shutil.which(command)
+    if not executable:
+        return False
+    if command == "codex" and not _codex_token_is_fresh():
+        return False
+    if command == "claude" and not _claude_profile_is_fresh():
+        return False
+    args = (
+        [executable, "login", "status"]
+        if command == "codex"
+        else [executable, "auth", "status"]
+    )
+    try:
+        result = subprocess.run(args, capture_output=True, text=True, timeout=15)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    if result.returncode != 0:
+        return False
+    output = (result.stdout or result.stderr).strip()
+    if command == "claude":
+        try:
+            return bool(json.loads(output).get("loggedIn"))
+        except (json.JSONDecodeError, AttributeError):
+            return False
+    return "logged in" in output.lower()
+
+
 def _runtime_info() -> tuple[dict, dict]:
     global _runtime_info_cache
     now = time.monotonic()
     if _runtime_info_cache and now - _runtime_info_cache[0] < RUNTIME_INFO_TTL_SECONDS:
         return _runtime_info_cache[1], _runtime_info_cache[2]
     versions = {"codex": _version("codex"), "claude": _version("claude")}
-    auth_status = {"codex": shutil.which("codex") is not None, "claude": shutil.which("claude") is not None}
+    auth_status = {"codex": _authenticated("codex"), "claude": _authenticated("claude")}
     _runtime_info_cache = (now, versions, auth_status)
     return versions, auth_status
+
+
+def _available_capabilities() -> list[str]:
+    _versions, auth_status = _runtime_info()
+    capabilities = list(BASE_CAPABILITIES)
+    if auth_status.get("codex"):
+        capabilities.append("codex_subscription")
+    if auth_status.get("claude"):
+        capabilities.append("claude_subscription")
+    return capabilities
 
 
 def heartbeat(client: GatewayClient) -> None:
@@ -50,7 +125,7 @@ def heartbeat(client: GatewayClient) -> None:
     client.request("POST", "/v1/workers/heartbeat", {
         "worker_id": WORKER_ID,
         "device": DEVICE,
-        "capabilities": CAPABILITIES,
+        "capabilities": _available_capabilities(),
         "versions": versions,
         "auth_status": auth_status,
         "meta": {"host": socket.gethostname()},
@@ -140,7 +215,9 @@ def execute(client: GatewayClient, request: dict) -> None:
 def run_once(client: GatewayClient) -> bool:
     heartbeat(client)
     response = client.request("POST", "/v1/workers/claim", {
-        "worker_id": WORKER_ID, "device": DEVICE, "capabilities": CAPABILITIES,
+        "worker_id": WORKER_ID,
+        "device": DEVICE,
+        "capabilities": _available_capabilities(),
     })
     request = response.get("request")
     if not request:

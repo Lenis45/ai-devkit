@@ -4,8 +4,8 @@
   <key>Label</key><string>ai.gateway-worker</string>
   <key>ProgramArguments</key><array><string>/Users/denis/.local/bin/amori-gateway-worker</string></array>
   <key>EnvironmentVariables</key><dict>
-    <key>PATH</key><string>/Users/denis/.local/bin:/Applications/ChatGPT.app/Contents/Resources:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
-    <key>AMORI_BROKER_URL</key><string>http://100.66.130.21:8110</string>
+    <key>PATH</key><string>/opt/homebrew/bin:/Users/denis/.local/bin:/Users/denis/.hermes/bin:/Applications/ChatGPT.app/Contents/Resources:/usr/local/bin:/usr/bin:/bin</string>
+    <key>AMORI_BROKER_URL</key><string>http://127.0.0.1:18110</string>
     <key>AMORI_WORKER_DEVICE</key><string>macbook</string>
   </dict>
   <key>RunAtLoad</key><true/><key>KeepAlive</key><true/><key>ThrottleInterval</key><integer>10</integer>

@@ -1,5 +1,7 @@
 import importlib.util
+import base64
 import json
+import stat
 import sys
 import tempfile
 import unittest
@@ -36,6 +38,35 @@ class Response:
 
 
 class GatewayClientTests(unittest.TestCase):
+    def test_expired_codex_token_is_not_fresh(self):
+        payload = base64.urlsafe_b64encode(
+            json.dumps({"exp": 1}).encode()
+        ).decode().rstrip("=")
+        self.assertFalse(gateway_worker._jwt_is_fresh(f"x.{payload}.x"))
+
+    def test_future_codex_token_is_fresh(self):
+        payload = base64.urlsafe_b64encode(
+            json.dumps({"exp": 4_102_444_800}).encode()
+        ).decode().rstrip("=")
+        self.assertTrue(gateway_worker._jwt_is_fresh(f"x.{payload}.x"))
+
+    def test_stale_claude_profile_is_not_fresh(self):
+        with tempfile.TemporaryDirectory() as directory:
+            profile = Path(directory) / ".claude.json"
+            profile.write_text(
+                json.dumps({"oauthAccount": {"profileFetchedAt": 1}}),
+                encoding="utf-8",
+            )
+            with mock.patch.object(Path, "home", return_value=Path(directory)):
+                self.assertFalse(gateway_worker._claude_profile_is_fresh())
+
+    def test_macbook_uses_local_ssh_tunnel_by_default(self):
+        with mock.patch.object(
+            gateway_client.socket, "gethostname", return_value="Denis-MacBook"
+        ):
+            client = gateway_client.GatewayClient(token="secret")
+        self.assertEqual(client.endpoint, "http://127.0.0.1:18110")
+
     def test_client_sends_bearer_and_disables_proxy(self):
         seen = {}
 
@@ -64,7 +95,12 @@ class GatewayClientTests(unittest.TestCase):
             path = Path(directory) / "large.bin"
             path.write_bytes(b"x")
             client = gateway_client.GatewayClient("http://broker", "secret")
-            with mock.patch.object(Path, "stat", return_value=type("S", (), {"st_size": 26 * 1024 * 1024})()):
+            file_stat = type(
+                "S",
+                (),
+                {"st_mode": stat.S_IFREG | 0o600, "st_size": 26 * 1024 * 1024},
+            )()
+            with mock.patch.object(Path, "stat", return_value=file_stat):
                 with self.assertRaisesRegex(gateway_client.GatewayError, "25 MB"):
                     client.upload(path, "denis")
 
@@ -89,12 +125,25 @@ class GatewayClientTests(unittest.TestCase):
         calls = []
         with mock.patch.object(gateway_worker.time, "monotonic", return_value=100.0), \
                 mock.patch.object(gateway_worker, "_version", side_effect=lambda command: calls.append(command) or f"{command}-1"), \
-                mock.patch.object(gateway_worker.shutil, "which", side_effect=lambda command: f"/bin/{command}"):
+                mock.patch.object(gateway_worker, "_authenticated", side_effect=lambda command: command == "codex"):
             first = gateway_worker._runtime_info()
             second = gateway_worker._runtime_info()
 
         self.assertEqual(first, second)
         self.assertEqual(calls, ["codex", "claude"])
+        self.assertEqual(first[1], {"codex": True, "claude": False})
+
+    def test_worker_only_advertises_authenticated_subscriptions(self):
+        with mock.patch.object(
+            gateway_worker,
+            "_runtime_info",
+            return_value=({}, {"codex": True, "claude": False}),
+        ):
+            capabilities = gateway_worker._available_capabilities()
+
+        self.assertIn("ollama", capabilities)
+        self.assertIn("codex_subscription", capabilities)
+        self.assertNotIn("claude_subscription", capabilities)
 
 
 if __name__ == "__main__":

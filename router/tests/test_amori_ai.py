@@ -276,6 +276,69 @@ class ConfigAndPrivacyTests(unittest.TestCase):
         self.assertEqual(record["duration_ms"], 123)
 
 
+class CodexCommandTests(unittest.TestCase):
+    def setUp(self):
+        self.config = {
+            "command": "codex",
+            "model": "",
+            "ask_sandbox": "workspace-write",
+            "act_sandbox": "workspace-write",
+            "skip_git_repo_check": True,
+            "workspace_network_access": True,
+            "disabled_mcp_servers": ["node_repl", "unsafe.name"],
+            "ask_reasoning_effort": "low",
+            "act_reasoning_effort": "high",
+        }
+
+    def test_ask_mode_keeps_network_for_local_and_tailnet_diagnostics(self):
+        command = amori_ai.build_codex_command(
+            "Проверь Ollama, ничего не меняй",
+            "ask",
+            self.config,
+            Path("/tmp/project"),
+            Path("/tmp/output.txt"),
+        )
+        self.assertIn("workspace-write", command)
+        self.assertIn("--skip-git-repo-check", command)
+        self.assertIn("sandbox_workspace_write.network_access=true", command)
+        self.assertIn("mcp_servers.node_repl.enabled=false", command)
+        self.assertNotIn("mcp_servers.unsafe.name.enabled=false", command)
+
+    def test_act_mode_uses_configured_workspace_sandbox(self):
+        command = amori_ai.build_codex_command(
+            "Исправь файл",
+            "act",
+            self.config,
+            Path("/tmp/project"),
+            Path("/tmp/output.txt"),
+        )
+        self.assertIn("workspace-write", command)
+        self.assertIn('model_reasoning_effort="high"', command)
+
+    def test_invalid_sandbox_is_rejected(self):
+        self.config["ask_sandbox"] = "unrestricted-magic"
+        with self.assertRaises(amori_ai.RouterError):
+            amori_ai.build_codex_command(
+                "test",
+                "ask",
+                self.config,
+                Path("/tmp/project"),
+                Path("/tmp/output.txt"),
+            )
+
+    def test_backend_proxy_keeps_local_services_outside_tunnel(self):
+        environment = amori_ai.backend_environment(
+            {
+                "proxy_url": "socks5h://127.0.0.1:18111",
+                "no_proxy": "127.0.0.1,localhost,::1",
+            }
+        )
+        self.assertIsNotNone(environment)
+        self.assertEqual(environment["HTTPS_PROXY"], "socks5h://127.0.0.1:18111")
+        self.assertEqual(environment["HTTP_PROXY"], "socks5h://127.0.0.1:18111")
+        self.assertIn("127.0.0.1", environment["NO_PROXY"])
+
+
 class SubscriptionFallbackTests(unittest.TestCase):
     def setUp(self):
         self.config = {
@@ -345,6 +408,28 @@ class SubscriptionFallbackTests(unittest.TestCase):
                     False,
                 )
         codex.assert_not_called()
+
+
+class ClaudeCommandTests(unittest.TestCase):
+    def test_headless_claude_uses_safe_mode(self):
+        with mock.patch.object(amori_ai, "run_process", return_value="готово") as run:
+            result = amori_ai.invoke_claude(
+                "Проверь архитектуру",
+                "ask",
+                {
+                    "claude": {
+                        "command": "claude",
+                        "safe_mode": True,
+                        "ask_max_turns": 4,
+                        "act_max_turns": 8,
+                        "model": "",
+                    }
+                },
+                Path.cwd(),
+            )
+
+        self.assertEqual(result, "готово")
+        self.assertIn("--safe-mode", run.call_args.args[0])
 
 
 class RoutingContextTests(unittest.TestCase):

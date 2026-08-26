@@ -22,12 +22,18 @@
   "codex": {
     "command": "codex",
     "model": "",
+    "ask_sandbox": "workspace-write",
+    "act_sandbox": "workspace-write",
+    "skip_git_repo_check": true,
+    "workspace_network_access": true,
+    "disabled_mcp_servers": [],
     "ask_reasoning_effort": "low",
     "act_reasoning_effort": "high"
   },
   "claude": {
     "command": "claude",
     "model": "",
+    "safe_mode": true,
     "ask_max_turns": 8,
     "act_max_turns": 24
   },

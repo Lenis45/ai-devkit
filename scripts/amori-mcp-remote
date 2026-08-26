@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Expose the Mac Mini Amori MCP server to MacBook CLIs over authenticated SSH stdio.
+set -euo pipefail
+
+exec /usr/bin/ssh -T \
+  -i "$HOME/.ssh/tailnet_admin_ed25519" \
+  -o BatchMode=yes \
+  -o ConnectTimeout=10 \
+  -o ServerAliveInterval=30 \
+  -o ServerAliveCountMax=3 \
+  denis@fd7a:115c:a1e0::123b:8215 \
+  /Users/denis/ai-infra/mcp/run.sh
