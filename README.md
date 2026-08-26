@@ -4,7 +4,7 @@
 
 Цель репозитория простая: одна проверяемая конфигурация, которую можно поставить на новую машину и получить одинаковое поведение агентов без ручного копирования правил, skills и OpenCode-настроек.
 
-Проверено локально: **14 августа 2026** на Mac mini M4, 16 ГБ.
+Проверено локально: **20 августа 2026** на Mac mini M4 и MacBook Apple Silicon.
 
 ---
 
@@ -55,6 +55,8 @@ ai-devkit/
 └── scripts/
     ├── amori-ai
     ├── bootstrap.sh
+    ├── bootstrap-macbook.sh
+    ├── configure-macbook.py
     ├── configure-hermes-local.py
     ├── install-router.sh
     └── sync-skills.sh
@@ -108,6 +110,14 @@ Bootstrap делает:
 - подтягивает локальные Ollama-модели, если установлен `ollama`.
 
 Повторный запуск безопасен: скрипты идемпотентны и не копируют секреты.
+
+Для MacBook с локальной Ollama, Codex/Claude подписками и VPN используется профиль:
+
+```bash
+./scripts/bootstrap-macbook.sh
+```
+
+Он ставит лёгкую `qwen3:1.7b` для первичной маршрутизации, выбирает сильную уже установленную локальную модель для ответов, настраивает Hermes и OpenCode, синхронизирует skills и подключает MacBook worker к Mac Mini через закрытый SSH-туннель. Отдельный loopback-only HTTP proxy сохраняет работу подписочных CLI при включённом VPN, а Amori MCP доступен на MacBook через SSH stdio. Broker token переносится отдельно и никогда не хранится в репозитории.
 
 ---
 

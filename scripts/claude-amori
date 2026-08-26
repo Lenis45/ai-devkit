@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Force Claude Code traffic through the Mac Mini SSH tunnel while VPN stays enabled.
+set -euo pipefail
+
+exec /opt/homebrew/bin/proxychains4 -q \
+  -f "$HOME/.config/amori/proxychains.conf" \
+  /opt/homebrew/bin/claude "$@"

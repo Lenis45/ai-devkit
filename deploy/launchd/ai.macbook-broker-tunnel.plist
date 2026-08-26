@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>ai.macbook-broker-tunnel</string>
+  <key>ProgramArguments</key><array>
+    <string>/usr/bin/ssh</string>
+    <string>-N</string><string>-T</string>
+    <string>-i</string><string>/Users/denis/.ssh/tailnet_admin_ed25519</string>
+    <string>-o</string><string>BatchMode=yes</string>
+    <string>-o</string><string>ExitOnForwardFailure=yes</string>
+    <string>-o</string><string>ServerAliveInterval=30</string>
+    <string>-o</string><string>ServerAliveCountMax=3</string>
+    <string>-o</string><string>StrictHostKeyChecking=accept-new</string>
+    <string>-L</string><string>127.0.0.1:18110:100.66.130.21:8110</string>
+    <string>-D</string><string>127.0.0.1:18111</string>
+    <string>denis@fd7a:115c:a1e0::123b:8215</string>
+  </array>
+  <key>RunAtLoad</key><true/><key>KeepAlive</key><true/><key>ThrottleInterval</key><integer>10</integer>
+  <key>StandardOutPath</key><string>/Users/denis/Library/Logs/amori-broker-tunnel.log</string>
+  <key>StandardErrorPath</key><string>/Users/denis/Library/Logs/amori-broker-tunnel.log</string>
+</dict></plist>

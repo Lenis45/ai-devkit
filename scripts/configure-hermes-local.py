@@ -145,6 +145,11 @@ def main() -> int:
     data["toolsets"] = minimal_toolsets
     platform_toolsets = data.setdefault("platform_toolsets", {})
     platform_toolsets["cli"] = minimal_toolsets
+    skills = data.setdefault("skills", {})
+    external_dirs = skills.setdefault("external_dirs", [])
+    shared_skills = str(Path("~/.agents/skills"))
+    if shared_skills not in external_dirs:
+        external_dirs.append(shared_skills)
 
     config_path.write_text(
         yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8"

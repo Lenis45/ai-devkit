@@ -66,7 +66,8 @@ LiteLLM, OpenRouter и обычные API gateways намеренно не ст�
 
 ## Безопасность действий
 
-- По умолчанию включён режим `ask`: Codex получает read-only sandbox, Claude — plan permission mode, локальный контур только отвечает текстом.
+- По умолчанию включён режим `ask`: prompt запрещает изменения, Claude получает plan permission mode, локальный контур только отвечает текстом.
+- Codex в `ask` использует `workspace-write` с сетью, потому что `read-only` sandbox не поддерживает сетевую диагностику Ollama, Tailscale и MCP. Это не `danger-full-access`; изменения всё равно не входят в контракт `ask`.
 - Изменения разрешаются только флагом `--act`.
 - Автоматически выбранный action идёт в Codex с `workspace-write`, но не получает unrestricted host access.
 - Явный `--to` уважается; `--to hermes --act` отклоняется.
@@ -84,6 +85,17 @@ ollama pull qwen3-vl:2b
 ollama pull qwen3:4b
 ollama create amori-hermes:4b -f models/Modelfile.hermes
 ```
+
+На MacBook с собственной Ollama и подписочными CLI используется отдельный bootstrap. Он ставит компактную `qwen3:1.7b` для быстрой первичной классификации, выбирает сильную установленную модель для ответов, сохраняет существующие OpenCode MCP/plugins и поднимает SSH-туннель к broker на Mac Mini:
+
+```bash
+cd ~/github/ai-devkit
+./scripts/bootstrap-macbook.sh
+```
+
+Сервисы слушают только loopback MacBook: `127.0.0.1:18110` ведёт к broker, SSH SOCKS работает на `127.0.0.1:18111`, а HTTP CONNECT-мост для Codex/Claude — на `127.0.0.1:18112`. Поэтому сторонний VPN не ломает Cloudflare/ChatGPT или Tailscale-маршрут, Ollama остаётся локальной через `NO_PROXY`, а порты не публикуются в LAN. Amori MCP регистрируется в Codex как SSH stdio-мост и не открывает отдельный сетевой порт.
+
+`codex login status` сам по себе не гарантирует, что OAuth-токен ещё действует. Worker дополнительно проверяет срок JWT и не рекламирует `codex_subscription`, пока токен не обновлён реальным входом.
 
 Безопасное переключение Hermes сначала показывает dry run:
 
