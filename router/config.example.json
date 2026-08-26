@@ -24,6 +24,7 @@
     "model": "",
     "ask_sandbox": "workspace-write",
     "act_sandbox": "workspace-write",
+    "skip_git_repo_check": true,
     "workspace_network_access": true,
     "disabled_mcp_servers": [],
     "ask_reasoning_effort": "low",

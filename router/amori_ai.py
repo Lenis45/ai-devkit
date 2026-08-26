@@ -810,6 +810,8 @@ def build_codex_command(
         "--config",
         f'model_reasoning_effort="{selected_effort}"',
     ]
+    if bool(codex_config.get("skip_git_repo_check", True)):
+        command.append("--skip-git-repo-check")
     if sandbox == "workspace-write" and bool(
         codex_config.get("workspace_network_access", False)
     ):
@@ -1027,18 +1029,33 @@ def command_doctor(
     for command in ("hermes", "codex", "claude"):
         checks["commands"][command] = shutil.which(command)
 
-    codex_status = run_process(["codex", "login", "status"], Path.cwd(), timeout=20) if shutil.which("codex") else "missing"
+    codex_command = str(config.get("codex", {}).get("command", "codex"))
+    claude_command = str(config.get("claude", {}).get("command", "claude"))
+    codex_status = (
+        run_process([codex_command, "login", "status"], Path.cwd(), timeout=20)
+        if shutil.which(codex_command)
+        else "missing"
+    )
     checks["subscriptions"]["codex"] = "chatgpt" if "ChatGPT" in codex_status else "not authenticated"
-    if shutil.which("claude"):
+    if shutil.which(claude_command):
         try:
-            raw = run_process(["claude", "auth", "status"], Path.cwd(), timeout=20)
+            raw = run_process(
+                [claude_command, "auth", "status"], Path.cwd(), timeout=20
+            )
             status = json.loads(raw)
             checks["subscriptions"]["claude"] = {
                 "logged_in": bool(status.get("loggedIn")),
                 "method": status.get("authMethod"),
                 "subscription": status.get("subscriptionType"),
             }
-        except (RouterError, json.JSONDecodeError):
+        except RouterError as exc:
+            message = str(exc).lower()
+            checks["subscriptions"]["claude"] = (
+                "not authenticated"
+                if "not logged in" in message or "login" in message
+                else "status unavailable"
+            )
+        except json.JSONDecodeError:
             checks["subscriptions"]["claude"] = "status unavailable"
 
     endpoint, models, checked = find_ollama_endpoint(

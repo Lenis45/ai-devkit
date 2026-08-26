@@ -65,6 +65,7 @@ def update_router(path: Path, template: Path, router_model: str, chat_model: str
             "command": str(Path.home() / ".local/bin/codex"),
             "ask_sandbox": "workspace-write",
             "act_sandbox": "workspace-write",
+            "skip_git_repo_check": True,
             "workspace_network_access": True,
             "proxy_url": "http://127.0.0.1:18112",
             "no_proxy": "127.0.0.1,localhost,::1",

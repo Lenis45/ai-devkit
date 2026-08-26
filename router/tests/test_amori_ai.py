@@ -283,6 +283,7 @@ class CodexCommandTests(unittest.TestCase):
             "model": "",
             "ask_sandbox": "workspace-write",
             "act_sandbox": "workspace-write",
+            "skip_git_repo_check": True,
             "workspace_network_access": True,
             "disabled_mcp_servers": ["node_repl", "unsafe.name"],
             "ask_reasoning_effort": "low",
@@ -298,6 +299,7 @@ class CodexCommandTests(unittest.TestCase):
             Path("/tmp/output.txt"),
         )
         self.assertIn("workspace-write", command)
+        self.assertIn("--skip-git-repo-check", command)
         self.assertIn("sandbox_workspace_write.network_access=true", command)
         self.assertIn("mcp_servers.node_repl.enabled=false", command)
         self.assertNotIn("mcp_servers.unsafe.name.enabled=false", command)
