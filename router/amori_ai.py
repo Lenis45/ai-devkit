@@ -942,6 +942,7 @@ def handle_request(
     output_json: bool,
     history: str = "",
     routing_prompt: Optional[str] = None,
+    allow_forced_fallback: bool = False,
 ) -> Tuple[Decision, Optional[str]]:
     decision, endpoint, _ = make_decision(
         routing_prompt or prompt, config, mode, forced_provider, disable_neural
@@ -973,7 +974,7 @@ def handle_request(
                     config.get("policy", {}).get("subscription_fallbacks", True)
                 )
                 if (
-                    forced_provider is not None
+                    (forced_provider is not None and not allow_forced_fallback)
                     or not fallback_enabled
                     or not is_recoverable_subscription_error(exc)
                 ):
@@ -985,6 +986,7 @@ def handle_request(
                 decision.provider = "codex"
                 decision.source += "+codex-fallback"
                 decision.reason += "; Claude subscription backend unavailable"
+                apply_execution_contract(prompt, decision, mode)
                 prepared = backend_prompt(prompt, decision, mode, config, history)
                 answer = invoke_codex(prepared, decision, mode, config, cwd)
         ok = True
@@ -1249,6 +1251,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("prompt", nargs="*", help="Prompt text; omit for interactive chat")
     parser.add_argument("--to", dest="provider", choices=sorted(VALID_PROVIDERS))
+    parser.add_argument(
+        "--allow-subscription-fallback",
+        action="store_true",
+        help="Allow a broker-selected subscription backend to fall back after auth or quota errors",
+    )
     parser.add_argument("--act", action="store_true", help="Allow selected backend to modify workspace")
     parser.add_argument("--route-only", action="store_true", help="Classify without running a backend")
     parser.add_argument("--explain", action="store_true", help="Print routing decision to stderr")
@@ -1296,6 +1303,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             args.route_only,
             args.json,
             routing_prompt=args.routing_text,
+            allow_forced_fallback=args.allow_subscription_fallback,
         )
         return 0
     except RouterError as exc:

@@ -379,6 +379,8 @@ class SubscriptionFallbackTests(unittest.TestCase):
             )
         self.assertEqual(answer, "готово")
         self.assertEqual(decision.provider, "codex")
+        self.assertEqual(decision.execution_handler, "codex_cli")
+        self.assertEqual(decision.required_capabilities, ["codex_subscription"])
         codex.assert_called_once()
 
     def test_explicit_claude_route_does_not_fallback(self):
@@ -408,6 +410,38 @@ class SubscriptionFallbackTests(unittest.TestCase):
                     False,
                 )
         codex.assert_not_called()
+
+    def test_broker_selected_claude_route_may_fallback_when_opted_in(self):
+        with (
+            mock.patch.object(
+                amori_ai,
+                "make_decision",
+                return_value=(self.decision, None, []),
+            ),
+            mock.patch.object(
+                amori_ai,
+                "invoke_claude",
+                side_effect=amori_ai.RouterError("OAuth session expired"),
+            ),
+            mock.patch.object(amori_ai, "invoke_codex", return_value="готово") as codex,
+            contextlib.redirect_stdout(io.StringIO()),
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
+            decision, answer = amori_ai.handle_request(
+                "Проведи архитектурный анализ",
+                self.config,
+                Path.cwd(),
+                "ask",
+                "claude",
+                True,
+                False,
+                False,
+                False,
+                allow_forced_fallback=True,
+            )
+        self.assertEqual(answer, "готово")
+        self.assertEqual(decision.provider, "codex")
+        codex.assert_called_once()
 
 
 class ClaudeCommandTests(unittest.TestCase):
