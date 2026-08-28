@@ -236,6 +236,20 @@ class SkillsTests(unittest.TestCase):
         selected = amori_ai.select_skills("test debug git performance", skills, 3)
         self.assertEqual(len(selected), 3)
 
+    def test_frontend_skills_are_selected_by_scope(self):
+        skills = [
+            amori_ai.Skill("impeccable", "Primary frontend workflow", "/impeccable/SKILL.md"),
+            amori_ai.Skill("ui-design-research", "Scoped design research", "/ui/SKILL.md"),
+            amori_ai.Skill("testing", "Regression tests", "/testing/SKILL.md"),
+        ]
+
+        routine = amori_ai.select_skills("Улучши интерфейс и адаптивную верстку", skills, 3)
+        research = amori_ai.select_skills("Подбери палитру и типографику дизайн-системы", skills, 3)
+
+        self.assertIn("impeccable", {item.name for item in routine})
+        self.assertNotIn("ui-design-research", {item.name for item in routine})
+        self.assertIn("ui-design-research", {item.name for item in research})
+
 
 class ConfigAndPrivacyTests(unittest.TestCase):
     def test_model_reasoning_is_not_shown_to_user(self):
