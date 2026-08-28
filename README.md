@@ -4,7 +4,7 @@
 
 Цель репозитория простая: одна проверяемая конфигурация, которую можно поставить на новую машину и получить одинаковое поведение агентов без ручного копирования правил, skills и OpenCode-настроек.
 
-Проверено локально: **20 августа 2026** на Mac mini M4 и MacBook Apple Silicon.
+Проверено локально: **28 августа 2026** на Mac mini M4 и MacBook Apple Silicon.
 
 ---
 
@@ -13,7 +13,7 @@
 | Слой | Состояние | Назначение |
 |------|-----------|------------|
 | `AGENTS.md` | включен | Единые правила поведения для Claude Code, Codex и OpenCode |
-| `skills/` | 18 локальных skills | Проверенные навыки, включая cost-aware routing и компактные handoff-пакеты |
+| `skills/` | 20 локальных skills | Проверенные навыки, включая frontend design, cost-aware routing и компактные handoff-пакеты |
 | OpenCode plugins | включены | `@dietrichgebert/ponytail`, `opencode-skills-collection@latest` |
 | OpenCode SkillPointer | включен | 1595+ bundled skills через pointer/vault, без загрузки всего набора в контекст |
 | OpenCode safety filter | включен | Блокирует `offensive` skill-категории; sensitive actions остаются под permission-gate |
@@ -141,8 +141,13 @@ Bootstrap делает:
 | `perf` | Measure-first performance workflow |
 | `refactor` | Поведенчески безопасный refactor |
 | `screenshot-product-qa` | UI QA через screenshots и визуальную проверку |
+| `impeccable` | Основной frontend workflow: product context, design, audit, polish и hardening |
+| `ui-design-research` | Узкий офлайн-поиск дизайн-систем, палитр, типографики, UX и stack guidance |
 | `testing` | Осмысленное покрытие и regression checks |
 | `web-research` | Актуальное web research с проверкой источников |
+
+Почему Taste Skill не активирован глобально и как разделены роли frontend-инструментов:
+[`docs/FRONTEND_SKILLS.md`](docs/FRONTEND_SKILLS.md).
 
 Ручная синхронизация:
 
