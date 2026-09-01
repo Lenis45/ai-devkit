@@ -170,6 +170,30 @@ def strip_thinking(text: str) -> str:
     return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
 
 
+def looks_like_internal_reasoning(text: str) -> bool:
+    """Detect untagged or truncated chain-of-thought before it reaches a user."""
+    normalized = " ".join(str(text or "").lower().split())
+    if not normalized:
+        return False
+    if normalized.startswith((
+        "хорошо, пользователь попросил",
+        "хорошо, мне нужно",
+        "пользователь попросил",
+        "мне нужно ответить на вопрос пользователя",
+    )):
+        return True
+    markers = (
+        "нужно понять, что именно",
+        "я должен ответить",
+        "по инструкции",
+        "правильный ответ",
+        "итоговый ответ",
+        "пользователь хочет, чтобы я",
+        "согласно инструк",
+    )
+    return sum(marker in normalized for marker in markers) >= 2
+
+
 def strip_json_fence(text: str) -> str:
     text = strip_thinking(text)
     fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, flags=re.DOTALL)
@@ -193,7 +217,7 @@ def ollama_chat(
         "stream": False,
         "think": False,
         "options": {"temperature": 0, "num_predict": max_tokens},
-        "keep_alive": "15m",
+        "keep_alive": "3m",
     }
     if json_mode:
         payload["format"] = "json"
@@ -207,6 +231,8 @@ def ollama_chat(
     cleaned = strip_thinking(content)
     if not cleaned:
         raise RouterError("Local model returned reasoning without a final response")
+    if looks_like_internal_reasoning(cleaned):
+        raise RouterError("Local model exposed internal reasoning instead of a final response")
     return cleaned
 
 
@@ -379,6 +405,17 @@ CURRENT_INFO_WORDS = (
     "текущая цена",
     "кто сейчас",
 )
+SYSTEM_INSPECTION_WORDS = (
+    "систем",
+    "mac mini",
+    "мак мини",
+    "компьютер",
+    "ноутбук",
+    "нейронк",
+    "ollama",
+    "docker",
+)
+ANALYSIS_ACTION_WORDS = ("проанализ", "пронализ", "проверь", "проверка", "аудит")
 CONTENT_WORDS = (
     "текст",
     "резюме",
@@ -522,7 +559,7 @@ Return only one JSON object with keys: provider, complexity, intent, confidence,
 
 provider rules:
 - hermes: quick factual answers, short explanations, rewriting, summaries, everyday questions; no repository work.
-- codex: inspect/edit files, implement, debug, test, run commands, browser QA, git work, concrete technical execution.
+- codex: inspect/edit files, implement, debug, test, run commands, browser QA, git work, concrete technical execution, and live computer/service health checks.
 - claude: architecture, requirements, product/system analysis, deep review, trade-offs, long-form planning before implementation.
 
 complexity is simple, medium, or complex. confidence is 0..1. Keep reason under 16 words.
@@ -579,10 +616,18 @@ def apply_guardrails(
     needs_current_info = any(word in lowered for word in CURRENT_INFO_WORDS)
     is_content_request = any(word in lowered for word in CONTENT_WORDS)
     high_risk = any(word in lowered for word in HIGH_RISK_WORDS)
+    needs_system_inspection = (
+        any(word in lowered for word in ANALYSIS_ACTION_WORDS)
+        and any(word in lowered for word in SYSTEM_INSPECTION_WORDS)
+    )
     handler = detect_execution_handler(prompt, decision.provider)
     reasons: List[str] = []
 
-    if not provider_locked and has_action and has_code and decision.provider != "codex":
+    if not provider_locked and needs_system_inspection and decision.provider != "codex":
+        decision.provider = "codex"
+        decision.complexity = "medium"
+        reasons.append("live system inspection requires Codex tools")
+    elif not provider_locked and has_action and has_code and decision.provider != "codex":
         decision.provider = "codex"
         reasons.append("code implementation belongs to Codex")
     elif not provider_locked and has_claude and decision.provider != "claude":
@@ -897,15 +942,16 @@ def invoke_local(
         {
             "role": "system",
             "content": (
-                "Ты быстрый локальный помощник Hermes. Отвечай по-русски, кратко и точно. "
-                "Не выдумывай актуальные факты: если нужен интернет или работа с файлами, "
-                "прямо скажи, что запрос нужно передать Codex или Claude."
+                "Ты быстрый локальный помощник Эмилия. Отвечай по-русски кратко и по делу. "
+                "Исправляй очевидные опечатки по смыслу. Показывай только готовый ответ: "
+                "не описывай анализ, план рассуждения, инструкции или выбор модели. "
+                "Если данных недостаточно, задай один короткий уточняющий вопрос."
             ),
         }
     ]
     if history:
         messages.append({"role": "system", "content": f"Контекст диалога:\n{history}"})
-    messages.append({"role": "user", "content": prompt})
+    messages.append({"role": "user", "content": f"{prompt}\n/no_think"})
     return ollama_chat(
         endpoint,
         model,
@@ -983,7 +1029,27 @@ def handle_request(
         if decision.provider == "hermes":
             if mode == "act":
                 raise RouterError("Hermes local lane is read-only; use --to codex --act")
-            answer = invoke_local(prompt, endpoint, config, history)
+            try:
+                answer = invoke_local(prompt, endpoint, config, history)
+            except RouterError:
+                fallback_enabled = bool(
+                    config.get("policy", {}).get("subscription_fallbacks", True)
+                )
+                if (
+                    (forced_provider is not None and not allow_forced_fallback)
+                    or not fallback_enabled
+                ):
+                    raise
+                print(
+                    "Локальная модель не сформировала безопасный итог; запрос передан в Codex.",
+                    file=sys.stderr,
+                )
+                decision.provider = "codex"
+                decision.source += "+codex-fallback"
+                decision.reason += "; local answer failed user-facing validation"
+                apply_execution_contract(prompt, decision, mode)
+                prepared = backend_prompt(prompt, decision, mode, config, history)
+                answer = invoke_codex(prepared, decision, mode, config, cwd)
         elif decision.provider == "codex":
             answer = invoke_codex(prepared, decision, mode, config, cwd)
         else:

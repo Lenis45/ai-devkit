@@ -67,6 +67,24 @@ class RoutingTests(unittest.TestCase):
         self.assertEqual(guarded.provider, "claude")
         self.assertEqual(guarded.complexity, "medium")
 
+    def test_live_system_inspection_with_typo_routes_to_codex(self):
+        decision = amori_ai.Decision(
+            provider="hermes",
+            complexity="medium",
+            intent="system description",
+            confidence=0.8,
+            reason="test",
+            source="ollama:test",
+            selected_skills=[],
+        )
+
+        guarded = amori_ai.apply_guardrails(
+            "Пронализируй систему на мак мини и пк", decision, "ask"
+        )
+
+        self.assertEqual(guarded.provider, "codex")
+        self.assertEqual(guarded.complexity, "medium")
+
     def test_short_writing_request_stays_local(self):
         decision = amori_ai.rule_classify("Сделай короткое резюме этого абзаца")
         self.assertEqual(decision.provider, "hermes")
@@ -255,6 +273,46 @@ class ConfigAndPrivacyTests(unittest.TestCase):
     def test_model_reasoning_is_not_shown_to_user(self):
         raw = "<think>private reasoning</think>\nFinal answer"
         self.assertEqual(amori_ai.strip_thinking(raw), "Final answer")
+
+    def test_untagged_internal_reasoning_is_detected(self):
+        raw = (
+            "Хорошо, пользователь попросил проверить систему. "
+            "Нужно понять, что именно он имеет в виду. По инструкции я должен ответить."
+        )
+        self.assertTrue(amori_ai.looks_like_internal_reasoning(raw))
+        self.assertFalse(amori_ai.looks_like_internal_reasoning("Система работает штатно."))
+
+    def test_local_chat_rejects_untagged_internal_reasoning(self):
+        with mock.patch.object(
+            amori_ai,
+            "json_request",
+            return_value={
+                "message": {
+                    "content": "Хорошо, пользователь попросил проверить систему. Нужно понять детали."
+                }
+            },
+        ):
+            with self.assertRaisesRegex(amori_ai.RouterError, "internal reasoning"):
+                amori_ai.ollama_chat(
+                    "http://127.0.0.1:11434",
+                    "qwen3:4b",
+                    [{"role": "user", "content": "проверка"}],
+                    5,
+                )
+
+    def test_local_answer_explicitly_disables_thinking(self):
+        config = {
+            "ollama": {"answer_model": "qwen3:4b", "answer_timeout_seconds": 30}
+        }
+        with mock.patch.object(amori_ai, "ollama_chat", return_value="Готово") as chat:
+            answer = amori_ai.invoke_local(
+                "Что такое RAG?", "http://127.0.0.1:11434", config
+            )
+
+        self.assertEqual(answer, "Готово")
+        messages = chat.call_args.args[2]
+        self.assertTrue(messages[-1]["content"].endswith("/no_think"))
+        self.assertIn("только готовый ответ", messages[0]["content"])
 
     def test_revoked_subscription_error_is_recoverable(self):
         error = amori_ai.RouterError("claude failed: 401 OAuth access token revoked")
@@ -481,6 +539,46 @@ class ClaudeCommandTests(unittest.TestCase):
 
 
 class RoutingContextTests(unittest.TestCase):
+    def test_invalid_local_answer_falls_back_to_codex(self):
+        config = {
+            "policy": {"subscription_fallbacks": True},
+            "skills": {"roots": [], "max_selected": 3},
+            "privacy": {"metrics_file": ""},
+        }
+        decision = amori_ai.Decision(
+            "hermes", "simple", "quick_answer", 0.9, "test", "rules", []
+        )
+        with (
+            mock.patch.object(
+                amori_ai,
+                "make_decision",
+                return_value=(decision, "http://127.0.0.1:11434", []),
+            ),
+            mock.patch.object(
+                amori_ai,
+                "invoke_local",
+                side_effect=amori_ai.RouterError("internal reasoning"),
+            ),
+            mock.patch.object(amori_ai, "invoke_codex", return_value="Готовый ответ") as codex,
+            contextlib.redirect_stdout(io.StringIO()),
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
+            routed, answer = amori_ai.handle_request(
+                "Короткий вопрос",
+                config,
+                Path.cwd(),
+                "ask",
+                None,
+                False,
+                False,
+                False,
+                False,
+            )
+
+        self.assertEqual(answer, "Готовый ответ")
+        self.assertEqual(routed.provider, "codex")
+        codex.assert_called_once()
+
     def test_routing_text_is_classified_without_removing_backend_context(self):
         config = {
             "policy": {"subscription_fallbacks": True},
