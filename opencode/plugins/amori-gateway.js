@@ -10,6 +10,7 @@ const GATEWAY_MAX_BUFFER_BYTES = 32 * 1024 * 1024;
 const ACTION_PATTERN = /(добавь|создай|создать|удали|перенеси|измени|исправь|отправь|опубликуй|сохрани|commit|push|create|write|delete|update|send|publish)/iu;
 const CONFIRM_PATTERN = /^\s*(да|yes|подтверждаю|выполняй|делай)\s*[.!]?\s*$/i;
 const REJECT_PATTERN = /^\s*(нет|no|отмена|отмени)\s*[.!]?\s*$/i;
+const NEW_TOPIC_PATTERN = /^\s*(\/new|новая задача|новая тема)\b/iu;
 
 async function runCommand(args, context) {
   let stdout;
@@ -41,6 +42,7 @@ async function runGateway(prompt, files, context, confirmed = false) {
     "--message-id", context.messageID || `${context.sessionID}-${Date.now()}`,
     "--cwd", context.directory,
   ];
+  if (!NEW_TOPIC_PATTERN.test(prompt)) command.push("--continue-thread");
   if (action) command.push("--act", confirmed ? "--yes" : "--defer-confirmation");
   for (const file of files) command.push("--file", file);
   command.push(prompt);

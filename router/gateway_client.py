@@ -97,6 +97,10 @@ class GatewayClient:
     def submit(self, payload: dict) -> dict:
         return self.request("POST", "/v1/requests", payload)["request"]
 
+    def latest(self, source: str, actor_id: str, session_id: str) -> Optional[dict]:
+        parts = [urllib.parse.quote(str(item), safe="") for item in (source, actor_id, session_id)]
+        return self.request("GET", f"/v1/sessions/{parts[0]}/{parts[1]}/{parts[2]}/latest").get("request")
+
     def get(self, request_id: str) -> dict:
         return self.request("GET", f"/v1/requests/{urllib.parse.quote(request_id, safe='')}")
 
@@ -170,6 +174,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Return an awaiting-confirmation action without cancelling it",
     )
     parser.add_argument("--file", action="append", default=[])
+    parser.add_argument(
+        "--continue-thread", action="store_true",
+        help="Continue the latest request from the same source, actor, and session",
+    )
     parser.add_argument("--status", metavar="REQUEST_ID")
     parser.add_argument("--wait", metavar="REQUEST_ID")
     parser.add_argument("--cancel", metavar="REQUEST_ID")
@@ -196,7 +204,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             if not args.prompt:
                 raise GatewayError("Prompt is required")
             artifact_ids = [client.upload(Path(item).expanduser().resolve(), args.actor) for item in args.file]
-            request = client.submit({
+            payload = {
                 "source": args.source,
                 "actor_id": args.actor,
                 "session_id": args.session,
@@ -206,7 +214,12 @@ def main(argv: Optional[list[str]] = None) -> int:
                 "cwd": str(Path(args.cwd).expanduser().resolve()),
                 "target_device": client_device(),
                 "artifact_ids": artifact_ids,
-            })
+            }
+            if args.continue_thread:
+                latest = client.latest(args.source, args.actor, args.session)
+                if latest:
+                    payload["parent_request_id"] = latest["id"]
+            request = client.submit(payload)
             response = _wait(client, str(request["id"]), args.timeout)
             if response["request"]["status"] == "awaiting_confirmation":
                 if args.defer_confirmation:
