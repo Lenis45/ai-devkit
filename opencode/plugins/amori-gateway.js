@@ -1,19 +1,37 @@
 import { tool } from "@opencode-ai/plugin";
+import { execFile } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
+const GATEWAY_TIMEOUT_MS = 15 * 60 * 1000;
+const GATEWAY_MAX_BUFFER_BYTES = 32 * 1024 * 1024;
 
 const ACTION_PATTERN = /(добавь|создай|создать|удали|перенеси|измени|исправь|отправь|опубликуй|сохрани|commit|push|create|write|delete|update|send|publish)/iu;
 const CONFIRM_PATTERN = /^\s*(да|yes|подтверждаю|выполняй|делай)\s*[.!]?\s*$/i;
 const REJECT_PATTERN = /^\s*(нет|no|отмена|отмени)\s*[.!]?\s*$/i;
 
 async function runCommand(args, context) {
-  const process = Bun.spawn(["amori-request", ...args, "--json"], {
-    cwd: context.directory, stdout: "pipe", stderr: "pipe",
-  });
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(process.stdout).text(), new Response(process.stderr).text(), process.exited,
-  ]);
-  if (exitCode !== 0) throw new Error((stderr || stdout || `Gateway exited with ${exitCode}`).slice(-1200));
-  return JSON.parse(stdout);
+  let stdout;
+  try {
+    ({ stdout } = await execFileAsync("amori-request", [...args, "--json"], {
+      cwd: context.directory,
+      encoding: "utf8",
+      timeout: GATEWAY_TIMEOUT_MS,
+      maxBuffer: GATEWAY_MAX_BUFFER_BYTES,
+    }));
+  } catch (error) {
+    const details = [error?.stderr, error?.stdout, error?.message]
+      .filter(Boolean)
+      .join("\n")
+      .trim();
+    throw new Error((details || "Amori Gateway process failed").slice(-1200));
+  }
+  try {
+    return JSON.parse(stdout);
+  } catch {
+    throw new Error(`Amori Gateway returned invalid JSON: ${String(stdout).slice(-1000)}`);
+  }
 }
 
 async function runGateway(prompt, files, context, confirmed = false) {
