@@ -64,7 +64,7 @@ export default async function AmoriGatewayPlugin({ directory }) {
   const completedResults = new Map();
   return {
     async "chat.message"(input, output) {
-      if (input.agent !== "amori") return;
+      if (!["ami", "amori"].includes(input.agent)) return;
       gatewaySessions.add(input.sessionID);
       const textParts = output.parts.filter((part) => part.type === "text");
       const prompt = textParts.map((part) => part.text || "").join("\n").trim();

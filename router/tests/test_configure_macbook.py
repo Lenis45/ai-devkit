@@ -32,6 +32,14 @@ class MacBookConfigurationTests(unittest.TestCase):
             [str(Path.home() / ".local/bin/amori-mcp-remote")],
         )
         self.assertTrue(config["mcp"]["amori"]["enabled"])
+        self.assertEqual(config["default_agent"], "ami")
+        self.assertEqual(config["agent"]["ami"]["mode"], "primary")
+        self.assertEqual(config["agent"]["amori"]["mode"], "subagent")
+        self.assertEqual(config["agent"]["local-chat"]["model"], "ollama/qwen3.5:9b-mlx")
+        self.assertEqual(config["agent"]["local-chat"]["tools"], {"*": False})
+        self.assertNotIn("maxSteps", config["agent"]["local-chat"])
+        self.assertEqual(config["provider"]["ollama"]["models"]["qwen3:1.7b"]["limit"]["output"], 512)
+        self.assertEqual(config["provider"]["ollama"]["models"]["qwen3.5:9b-mlx"]["limit"]["output"], 1024)
 
     def test_router_uses_http_bridge_and_disables_blocking_app_mcp(self):
         with tempfile.TemporaryDirectory() as directory:

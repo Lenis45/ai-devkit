@@ -27,7 +27,15 @@ link "$REPO/AGENTS.md" "$HOME/.config/opencode/AGENTS.md"
 # --- 2. Конфиги ------------------------------------------------------------
 say "Ставлю конфиги (без секретов)…"
 mkdir -p "$HOME/.config/opencode"
-cp -f "$REPO/opencode/opencode.json" "$HOME/.config/opencode/opencode.json"
+OPENCODE_CONFIG="$HOME/.config/opencode/opencode.jsonc"
+if [ -f "$OPENCODE_CONFIG" ]; then
+  cp -f "$OPENCODE_CONFIG" "$OPENCODE_CONFIG.bak"
+fi
+if [ -f "$HOME/.config/opencode/opencode.json" ]; then
+  cp -f "$HOME/.config/opencode/opencode.json" "$HOME/.config/opencode/opencode.json.bak"
+  rm -f "$HOME/.config/opencode/opencode.json"
+fi
+cp -f "$REPO/opencode/opencode.json" "$OPENCODE_CONFIG"
 cp -f "$REPO/opencode/skill-filter.jsonc" "$HOME/.config/opencode/skill-filter.jsonc"
 mkdir -p "$HOME/.config/opencode/plugins"
 cp -f "$REPO/opencode/plugins/amori-gateway.js" "$HOME/.config/opencode/plugins/amori-gateway.js"

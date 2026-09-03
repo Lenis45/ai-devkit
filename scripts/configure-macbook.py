@@ -88,14 +88,20 @@ def update_opencode(path: Path, plugin_path: Path, router_model: str, chat_model
     plugin = str(plugin_path)
     if plugin not in plugins:
         plugins.append(plugin)
-    config["default_agent"] = "amori"
+    config["default_agent"] = "ami"
     config.setdefault("provider", {})["ollama"] = {
         "npm": "@ai-sdk/openai-compatible",
         "name": "Ollama (MacBook local)",
         "options": {"baseURL": "http://127.0.0.1:11434/v1"},
         "models": {
-            router_model: {"name": f"{router_model} (local router)"},
-            chat_model: {"name": f"{chat_model} (local chat)"},
+            router_model: {
+                "name": f"{router_model} (local router)",
+                "limit": {"context": 8192, "output": 512},
+            },
+            chat_model: {
+                "name": f"{chat_model} (local chat)",
+                "limit": {"context": 16384, "output": 1024},
+            },
         },
     }
     config.setdefault("mcp", {})["amori"] = {
@@ -105,8 +111,8 @@ def update_opencode(path: Path, plugin_path: Path, router_model: str, chat_model
         "timeout": 30000,
     }
     agents = config.setdefault("agent", {})
-    agents["amori"] = {
-        "description": "Unified Amori entry point with local/Codex/Claude routing",
+    agents["ami"] = {
+        "description": "Unified Ami entry point with local/Codex/Claude routing",
         "mode": "primary",
         "model": f"ollama/{router_model}",
         "tools": {"*": False},
@@ -116,9 +122,19 @@ def update_opencode(path: Path, plugin_path: Path, router_model: str, chat_model
             "Return the text after [AMORI_GATEWAY_RESULT] exactly and do not solve it twice."
         ),
     }
+    agents["amori"] = {
+        **agents["ami"],
+        "description": "Compatibility alias for the unified Ami entry point",
+        "mode": "subagent",
+    }
     agents["local-chat"] = {
         "description": "Fast private chat on the MacBook Ollama",
         "model": f"ollama/{chat_model}",
+        "tools": {"*": False},
+        "prompt": (
+            "Answer the user directly in natural language. Never emit tool-call JSON, "
+            "function arguments, hidden reasoning, or implementation metadata."
+        ),
     }
     config.setdefault("skills", {})["paths"] = [
         str(Path.home() / ".config/opencode/skills")

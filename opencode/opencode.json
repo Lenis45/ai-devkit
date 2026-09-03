@@ -2,7 +2,7 @@
   "$schema": "https://opencode.ai/config.json",
   "autoupdate": true,
   "username": "denis",
-  "default_agent": "amori",
+  "default_agent": "ami",
   "server": {
     "hostname": "127.0.0.1"
   },
@@ -105,16 +105,20 @@
       },
       "models": {
         "qwen3:1.7b": {
-          "name": "Qwen3 1.7B (routing)"
+          "name": "Qwen3 1.7B (routing)",
+          "limit": {"context": 8192, "output": 512}
         },
         "qwen3-vl:2b": {
-          "name": "Qwen3-VL 2B (local vision)"
+          "name": "Qwen3-VL 2B (local vision)",
+          "limit": {"context": 8192, "output": 1024}
         },
         "qwen3:4b": {
-          "name": "Qwen3 4B (fast local chat)"
+          "name": "Qwen3 4B (fast local chat)",
+          "limit": {"context": 8192, "output": 512}
         },
         "amori-hermes:4b": {
-          "name": "Qwen3 4B 64K (Hermes)"
+          "name": "Qwen3 4B 64K (Hermes)",
+          "limit": {"context": 16384, "output": 2048}
         }
       }
     },
@@ -126,13 +130,16 @@
       },
       "models": {
         "qwen3.6:35b-a3b-q4_K_M": {
-          "name": "Qwen3.6 35B A3B Q4_K_M (универсальный анализ)"
+          "name": "Qwen3.6 35B A3B Q4_K_M (универсальный анализ)",
+          "limit": {"context": 32768, "output": 4096}
         },
         "qwen3.6:27b-q4_K_M": {
-          "name": "Qwen3.6 27B Q4_K_M (код и сложные задачи)"
+          "name": "Qwen3.6 27B Q4_K_M (код и сложные задачи)",
+          "limit": {"context": 32768, "output": 4096}
         },
         "gemma4:12b-it-qat": {
-          "name": "Gemma4 12B IT QAT (быстрый чат)"
+          "name": "Gemma4 12B IT QAT (быстрый чат)",
+          "limit": {"context": 16384, "output": 1024}
         }
       }
     },
@@ -141,9 +148,9 @@
       "name": "Ollama IPv4 fallback (when Mac VPN route is fixed)",
       "options": {"baseURL": "http://100.77.9.84:11434/v1"},
       "models": {
-        "qwen3.6:35b-a3b-q4_K_M": {"name": "Qwen3.6 35B A3B Q4_K_M (универсальный анализ)"},
-        "qwen3.6:27b-q4_K_M": {"name": "Qwen3.6 27B Q4_K_M (код и сложные задачи)"},
-        "gemma4:12b-it-qat": {"name": "Gemma4 12B IT QAT (быстрый чат)"}
+        "qwen3.6:35b-a3b-q4_K_M": {"name": "Qwen3.6 35B A3B Q4_K_M (универсальный анализ)", "limit": {"context": 32768, "output": 4096}},
+        "qwen3.6:27b-q4_K_M": {"name": "Qwen3.6 27B Q4_K_M (код и сложные задачи)", "limit": {"context": 32768, "output": 4096}},
+        "gemma4:12b-it-qat": {"name": "Gemma4 12B IT QAT (быстрый чат)", "limit": {"context": 16384, "output": 1024}}
       }
     }
   },
@@ -155,9 +162,17 @@
     ]
   },
   "agent": {
-    "amori": {
-      "description": "Unified Amori entry point with automatic local/Codex/Claude routing",
+    "ami": {
+      "description": "Unified Ami entry point with automatic local/Codex/Claude routing",
       "mode": "primary",
+      "model": "ollama-mac/qwen3:1.7b",
+      "tools": {"*": false},
+      "maxSteps": 2,
+      "prompt": "The Ami gateway hook replaces every user message with a completed result. Return the text after [AMORI_GATEWAY_RESULT] exactly and never solve a task yourself."
+    },
+    "amori": {
+      "description": "Compatibility alias for the unified Ami entry point",
+      "mode": "subagent",
       "model": "ollama-mac/qwen3:1.7b",
       "tools": {"*": false},
       "maxSteps": 2,
@@ -165,7 +180,9 @@
     },
     "chat-mac": {
       "description": "Fast private chat on the always-on Mac Ollama",
-      "model": "ollama-mac/qwen3:1.7b"
+      "model": "ollama-mac/qwen3:1.7b",
+      "tools": {"*": false},
+      "prompt": "Answer the user directly in natural language. Never emit tool-call JSON, function arguments, hidden reasoning, or implementation metadata."
     },
     "hermes-mac": {
       "description": "Local tool-oriented analysis on the always-on Mac Ollama",
