@@ -22,8 +22,8 @@ class MacBookConfigurationTests(unittest.TestCase):
             config = configure_macbook.update_opencode(
                 path,
                 Path(directory) / "amori-gateway.js",
-                "qwen3:1.7b",
-                "qwen3.5:9b-mlx",
+                "ami-qwen3:1.7b-nothink",
+                "gemma4:12b-mlx",
             )
 
         self.assertIn("context7", config["mcp"])
@@ -35,11 +35,44 @@ class MacBookConfigurationTests(unittest.TestCase):
         self.assertEqual(config["default_agent"], "ami")
         self.assertEqual(config["agent"]["ami"]["mode"], "primary")
         self.assertEqual(config["agent"]["amori"]["mode"], "subagent")
-        self.assertEqual(config["agent"]["local-chat"]["model"], "ollama/qwen3.5:9b-mlx")
+        self.assertEqual(
+            config["small_model"],
+            "ollama/ami-qwen3:1.7b-nothink",
+        )
+        self.assertEqual(
+            config["agent"]["local-chat"]["model"],
+            "ollama/ami-qwen3:1.7b-nothink",
+        )
         self.assertEqual(config["agent"]["local-chat"]["tools"], {"*": False})
         self.assertNotIn("maxSteps", config["agent"]["local-chat"])
-        self.assertEqual(config["provider"]["ollama"]["models"]["qwen3:1.7b"]["limit"]["output"], 512)
-        self.assertEqual(config["provider"]["ollama"]["models"]["qwen3.5:9b-mlx"]["limit"]["output"], 1024)
+        self.assertNotIn("maxSteps", config["agent"]["ami"])
+        self.assertEqual(config["agent"]["local-deep"]["model"], "ollama/gemma4:12b-mlx")
+        self.assertEqual(config["agent"]["local-deep"]["tools"], {"*": False})
+        self.assertEqual(
+            config["provider"]["ollama"]["models"]["ami-qwen3:1.7b-nothink"]["limit"]["output"],
+            512,
+        )
+        self.assertEqual(config["provider"]["ollama"]["models"]["gemma4:12b-mlx"]["limit"]["output"], 1024)
+        self.assertEqual(config["provider"]["ollama"]["options"]["headerTimeout"], 60000)
+
+    def test_opencode_removes_broken_duplicate_plugins(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "opencode.jsonc"
+            path.write_text(
+                '{"plugin":["@dietrichgebert/ponytail",'
+                '"opencode-skills-collection@latest","custom-plugin"]}',
+                encoding="utf-8",
+            )
+            config = configure_macbook.update_opencode(
+                path,
+                Path(directory) / "amori-gateway.js",
+                "ami-qwen3:1.7b-nothink",
+                "gemma4:12b-mlx",
+            )
+
+        self.assertIn("custom-plugin", config["plugin"])
+        self.assertNotIn("@dietrichgebert/ponytail", config["plugin"])
+        self.assertNotIn("opencode-skills-collection@latest", config["plugin"])
 
     def test_router_uses_http_bridge_and_disables_blocking_app_mcp(self):
         with tempfile.TemporaryDirectory() as directory:

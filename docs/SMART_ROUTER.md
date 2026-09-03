@@ -86,12 +86,14 @@ ollama pull qwen3:4b
 ollama create amori-hermes:4b -f models/Modelfile.hermes
 ```
 
-На MacBook с собственной Ollama и подписочными CLI используется отдельный bootstrap. Он ставит компактную `qwen3:1.7b` для быстрой первичной классификации, выбирает сильную установленную модель для ответов, сохраняет существующие OpenCode MCP/plugins и поднимает SSH-туннель к broker на Mac Mini:
+На MacBook с собственной Ollama и подписочными CLI используется отдельный bootstrap. Он создаёт `ami-qwen3:1.7b-nothink` с контекстом 8K для классификации и простых ответов, сохраняет MCP и исправные plugins, удаляет несовместимый Ponytail и дублирующий загрузчик skills, поднимает SSH-туннель к broker на Mac Mini:
 
 ```bash
 cd ~/github/ai-devkit
 ./scripts/bootstrap-macbook.sh
 ```
+
+OpenCode использует этот alias в `ami`, `local-chat` и генерации заголовков. Шаблон принудительно закрывает thinking: в проверенной версии Ollama OpenAI-совместимый endpoint игнорировал `think:false`, из-за чего Qwen возвращал reasoning без финального `content`. `local-deep` использует Gemma, а не Qwen 9B MLX с большим контекстом. Worker проверяет завершение процесса каждые 250 мс, отмену раз в 2 секунды, heartbeat раз в 20 секунд; stdout/stderr читаются во время выполнения, чтобы длинный ответ не заблокировал pipe.
 
 Сервисы слушают только loopback MacBook: `127.0.0.1:18110` ведёт к broker, SSH SOCKS работает на `127.0.0.1:18111`, а HTTP CONNECT-мост для Codex/Claude — на `127.0.0.1:18112`. Поэтому сторонний VPN не ломает Cloudflare/ChatGPT или Tailscale-маршрут, Ollama остаётся локальной через `NO_PROXY`, а порты не публикуются в LAN. Amori MCP регистрируется в Codex как SSH stdio-мост и не открывает отдельный сетевой порт.
 

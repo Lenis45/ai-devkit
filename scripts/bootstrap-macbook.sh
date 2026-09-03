@@ -63,7 +63,7 @@ python3 "$REPO/scripts/configure-macbook.py" --apply --repo "$REPO"
 HERMES_PY="$HOME/.hermes/hermes-agent/venv/bin/python"
 if [[ -x "$HERMES_PY" ]]; then
   "$HERMES_PY" "$REPO/scripts/configure-hermes-local.py" \
-    --apply --model qwen3.5:9b-mlx --context-length 65536
+    --apply --model ami-qwen3:1.7b-nothink --context-length 8192
 fi
 
 PATH_LINE='export PATH="$HOME/.local/bin:$HOME/.hermes/bin:/opt/homebrew/bin:$PATH"'

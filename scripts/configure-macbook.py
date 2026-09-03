@@ -7,13 +7,19 @@ import argparse
 import datetime as dt
 import json
 import shutil
+import subprocess
 import urllib.request
 from pathlib import Path
 from typing import Any
 
 
-PREFERRED_ROUTER_MODELS = ("qwen3:1.7b", "qwen3.5:9b-mlx", "qwen3:4b")
-PREFERRED_CHAT_MODELS = ("qwen3.5:9b-mlx", "gemma4:12b-mlx", "qwen3:4b")
+PREFERRED_ROUTER_MODELS = ("qwen3:1.7b",)
+PREFERRED_OPENCODE_DEEP_MODELS = ("gemma4:12b-mlx",)
+OPENCODE_FAST_MODEL = "ami-qwen3:1.7b-nothink"
+REMOVED_OPENCODE_PLUGINS = {
+    "@dietrichgebert/ponytail",
+    "opencode-skills-collection@latest",
+}
 
 
 def load_json(path: Path, fallback: dict[str, Any]) -> dict[str, Any]:
@@ -51,6 +57,20 @@ def backup(path: Path) -> None:
     shutil.copy2(path, path.with_name(f"{path.name}.backup-{stamp}"))
 
 
+def create_opencode_fast_model(repo: Path, apply: bool) -> None:
+    modelfile = repo / "models/qwen3-opencode-nothink.Modelfile"
+    if not modelfile.is_file():
+        raise FileNotFoundError(f"Missing OpenCode model template: {modelfile}")
+    if not apply:
+        print(f"Would create/update Ollama model: {OPENCODE_FAST_MODEL}")
+        return
+    subprocess.run(
+        ["ollama", "create", OPENCODE_FAST_MODEL, "-f", str(modelfile)],
+        check=True,
+    )
+    print(f"Updated Ollama model: {OPENCODE_FAST_MODEL}")
+
+
 def update_router(path: Path, template: Path, router_model: str, chat_model: str) -> dict[str, Any]:
     config = load_json(path, load_json(template, {}))
     config.setdefault("ollama", {}).update(
@@ -82,24 +102,39 @@ def update_router(path: Path, template: Path, router_model: str, chat_model: str
     return config
 
 
-def update_opencode(path: Path, plugin_path: Path, router_model: str, chat_model: str) -> dict[str, Any]:
+def update_opencode(
+    path: Path,
+    plugin_path: Path,
+    fast_model: str,
+    deep_model: str,
+) -> dict[str, Any]:
     config = load_json(path, {"$schema": "https://opencode.ai/config.json"})
-    plugins = config.setdefault("plugin", [])
+    plugins = [
+        item for item in config.setdefault("plugin", [])
+        if item not in REMOVED_OPENCODE_PLUGINS
+    ]
     plugin = str(plugin_path)
     if plugin not in plugins:
         plugins.append(plugin)
+    config["plugin"] = plugins
     config["default_agent"] = "ami"
+    config["small_model"] = f"ollama/{fast_model}"
     config.setdefault("provider", {})["ollama"] = {
         "npm": "@ai-sdk/openai-compatible",
         "name": "Ollama (MacBook local)",
-        "options": {"baseURL": "http://127.0.0.1:11434/v1"},
+        "options": {
+            "baseURL": "http://127.0.0.1:11434/v1",
+            "timeout": 120000,
+            "headerTimeout": 60000,
+            "chunkTimeout": 30000,
+        },
         "models": {
-            router_model: {
-                "name": f"{router_model} (local router)",
+            fast_model: {
+                "name": f"{fast_model} (fast, thinking disabled)",
                 "limit": {"context": 8192, "output": 512},
             },
-            chat_model: {
-                "name": f"{chat_model} (local chat)",
+            deep_model: {
+                "name": f"{deep_model} (local deep chat)",
                 "limit": {"context": 16384, "output": 1024},
             },
         },
@@ -114,9 +149,8 @@ def update_opencode(path: Path, plugin_path: Path, router_model: str, chat_model
     agents["ami"] = {
         "description": "Unified Ami entry point with local/Codex/Claude routing",
         "mode": "primary",
-        "model": f"ollama/{router_model}",
+        "model": f"ollama/{fast_model}",
         "tools": {"*": False},
-        "maxSteps": 2,
         "prompt": (
             "The Amori gateway plugin replaces the request with a completed result. "
             "Return the text after [AMORI_GATEWAY_RESULT] exactly and do not solve it twice."
@@ -128,17 +162,21 @@ def update_opencode(path: Path, plugin_path: Path, router_model: str, chat_model
         "mode": "subagent",
     }
     agents["local-chat"] = {
-        "description": "Fast private chat on the MacBook Ollama",
-        "model": f"ollama/{chat_model}",
+        "description": "Fast private chat on the MacBook local router model",
+        "model": f"ollama/{fast_model}",
         "tools": {"*": False},
         "prompt": (
             "Answer the user directly in natural language. Never emit tool-call JSON, "
             "function arguments, hidden reasoning, or implementation metadata."
         ),
     }
-    config.setdefault("skills", {})["paths"] = [
-        str(Path.home() / ".config/opencode/skills")
-    ]
+    agents["local-deep"] = {
+        "description": "Higher-quality private chat on the MacBook; slower than local-chat",
+        "model": f"ollama/{deep_model}",
+        "tools": {"*": False},
+        "prompt": agents["local-chat"]["prompt"],
+    }
+    config.setdefault("skills", {})["paths"] = []
     return config
 
 
@@ -162,18 +200,26 @@ def main() -> int:
     repo = Path(args.repo).expanduser().resolve()
     installed = ollama_models(args.endpoint)
     router_model = choose_model(installed, PREFERRED_ROUTER_MODELS, "router")
-    chat_model = choose_model(installed, PREFERRED_CHAT_MODELS, "chat")
-    print(f"Local router: {router_model}")
-    print(f"Local chat: {chat_model}")
+    deep_model = choose_model(installed, PREFERRED_OPENCODE_DEEP_MODELS, "OpenCode deep chat")
+    create_opencode_fast_model(repo, args.apply)
+    print(f"Local base model: {router_model}")
+    print(f"Local router and answer: {OPENCODE_FAST_MODEL}")
+    print(f"OpenCode fast chat: {OPENCODE_FAST_MODEL}")
+    print(f"OpenCode deep chat: {deep_model}")
 
     router_path = Path.home() / ".config/amori-ai/config.json"
-    router = update_router(router_path, repo / "router/config.example.json", router_model, chat_model)
+    router = update_router(
+        router_path,
+        repo / "router/config.example.json",
+        OPENCODE_FAST_MODEL,
+        OPENCODE_FAST_MODEL,
+    )
     write_json(router_path, router, args.apply)
 
     opencode_dir = Path.home() / ".config/opencode"
     plugin_target = opencode_dir / "plugins/amori-gateway.js"
     opencode_path = opencode_dir / "opencode.jsonc"
-    opencode = update_opencode(opencode_path, plugin_target, router_model, chat_model)
+    opencode = update_opencode(opencode_path, plugin_target, OPENCODE_FAST_MODEL, deep_model)
     write_json(opencode_path, opencode, args.apply)
     if args.apply:
         plugin_target.parent.mkdir(parents=True, exist_ok=True)
