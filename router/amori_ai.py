@@ -127,8 +127,16 @@ def json_request(
     request = urllib.request.Request(url, data=data, headers=headers)
     # Local and tailnet endpoints must never be sent through a corporate/VPN proxy.
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    with opener.open(request, timeout=timeout) as response:
-        body = response.read().decode("utf-8")
+    try:
+        with opener.open(request, timeout=timeout) as response:
+            body = response.read().decode("utf-8")
+    except urllib.error.HTTPError as error:
+        details = error.read(4096).decode("utf-8", errors="replace").lower()
+        if "insufficient memory" in details or "out of memory" in details:
+            raise RouterError("Local model ran out of memory; use a smaller model or context") from error
+        raise RouterError(f"Ollama API returned HTTP {error.code}") from error
+    except (urllib.error.URLError, OSError, TimeoutError) as error:
+        raise RouterError("Ollama connection failed or timed out") from error
     parsed = json.loads(body)
     if not isinstance(parsed, dict):
         raise RouterError(f"Unexpected JSON response from {url}")

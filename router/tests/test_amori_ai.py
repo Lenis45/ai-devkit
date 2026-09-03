@@ -18,6 +18,18 @@ SPEC.loader.exec_module(amori_ai)
 
 
 class RoutingTests(unittest.TestCase):
+    def test_ollama_memory_failure_is_a_router_error_without_traceback_data(self):
+        error = amori_ai.urllib.error.HTTPError(
+            "http://127.0.0.1:11434/api/chat", 500, "Server Error", {},
+            io.BytesIO(b'{"error":"Metal Insufficient Memory internal-path"}'),
+        )
+        opener = mock.Mock()
+        opener.open.side_effect = error
+        with mock.patch.object(amori_ai.urllib.request, "build_opener", return_value=opener):
+            with self.assertRaisesRegex(amori_ai.RouterError, "ran out of memory") as raised:
+                amori_ai.json_request("http://127.0.0.1:11434/api/chat", {})
+        self.assertNotIn("internal-path", str(raised.exception))
+
     def test_simple_question_routes_to_local_hermes(self):
         decision = amori_ai.rule_classify("Что такое RAG?")
         self.assertEqual(decision.provider, "hermes")

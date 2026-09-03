@@ -199,14 +199,29 @@ def execute(client: GatewayClient, request: dict) -> None:
     _event(client, request_id, "running", f"MacBook: {provider}", 40)
     process = subprocess.Popen(command, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
     try:
-        while process.poll() is None:
-            state = client.get(request_id)["request"]["status"]
-            if state == "cancelled":
-                os.killpg(process.pid, signal.SIGTERM)
-                return
-            heartbeat(client)
-            time.sleep(20)
-        stdout, stderr = process.communicate()
+        next_control_check = 0.0
+        next_heartbeat = 0.0
+        while True:
+            try:
+                stdout, stderr = process.communicate(timeout=0.25)
+                break
+            except subprocess.TimeoutExpired:
+                pass
+            now = time.monotonic()
+            if now >= next_control_check:
+                state = client.get(request_id)["request"]["status"]
+                if state == "cancelled":
+                    os.killpg(process.pid, signal.SIGTERM)
+                    try:
+                        process.communicate(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        os.killpg(process.pid, signal.SIGKILL)
+                        process.communicate()
+                    return
+                next_control_check = now + 2
+            if now >= next_heartbeat:
+                heartbeat(client)
+                next_heartbeat = now + 20
         if process.returncode != 0:
             raise GatewayError((stderr or stdout or "executor failed")[-1000:])
         payload = json.loads(stdout)

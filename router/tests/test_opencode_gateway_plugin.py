@@ -22,6 +22,9 @@ def test_gateway_plugin_preserves_file_forwarding() -> None:
     assert 'command.push("--file", file)' in source
     assert 'part.url.startsWith("file:")' in source
     assert "pathToFileURL(path).href" in source
+    assert "extractReadToolFiles(part.text, directory)" in source
+    assert "Called the Read tool with the following input" in source
+    assert "const READ_TOOL_PATTERN = /^Called" in source
 
 
 def test_gateway_plugin_continues_chat_until_explicit_new_topic() -> None:

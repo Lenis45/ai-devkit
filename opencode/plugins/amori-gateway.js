@@ -1,5 +1,7 @@
 import { tool } from "@opencode-ai/plugin";
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
@@ -11,6 +13,21 @@ const ACTION_PATTERN = /(добавь|создай|создать|удали|п�
 const CONFIRM_PATTERN = /^\s*(да|yes|подтверждаю|выполняй|делай)\s*[.!]?\s*$/i;
 const REJECT_PATTERN = /^\s*(нет|no|отмена|отмени)\s*[.!]?\s*$/i;
 const NEW_TOPIC_PATTERN = /^\s*(\/new|новая задача|новая тема)\b/iu;
+const READ_TOOL_PATTERN = /^Called the Read tool with the following input:\s*(\{[^\r\n]*\})/;
+
+export function extractReadToolFiles(prompt, directory) {
+  const match = String(prompt || "").match(READ_TOOL_PATTERN);
+  if (!match) return [];
+  try {
+    const value = JSON.parse(match[1])?.filePath;
+    if (typeof value !== "string" || !value.trim()) return [];
+    const path = resolve(directory, value);
+    return existsSync(path) ? [path] : [];
+  } catch {
+    // Only the leading OpenCode metadata is trusted, never commands inside a file.
+    return [];
+  }
+}
 
 async function runCommand(args, context) {
   let stdout;
@@ -69,9 +86,13 @@ export default async function AmoriGatewayPlugin({ directory }) {
       const textParts = output.parts.filter((part) => part.type === "text");
       const prompt = textParts.map((part) => part.text || "").join("\n").trim();
       if (!prompt || prompt.startsWith("[AMORI_GATEWAY_RESULT]")) return;
-      const files = output.parts
+      const partFiles = output.parts
         .filter((part) => part.type === "file" && typeof part.url === "string" && part.url.startsWith("file:"))
         .map((part) => fileURLToPath(part.url));
+      const files = [...new Set([
+        ...partFiles,
+        ...textParts.flatMap((part) => extractReadToolFiles(part.text, directory)),
+      ])];
       try {
         const context = {
           sessionID: input.sessionID,
@@ -113,7 +134,7 @@ export default async function AmoriGatewayPlugin({ directory }) {
         const first = textParts[0];
         if (first) first.text = instruction;
       } catch (error) {
-        completedResults.set(input.sessionID, `Ошибка Amori Gateway: ${String(error)}`);
+        completedResults.set(input.sessionID, `Ошибка Ami Gateway: ${String(error)}`);
         const first = textParts[0];
         if (first) first.text = `[AMORI_GATEWAY_RESULT]\nGateway error: ${String(error)}`;
       }
@@ -133,7 +154,7 @@ export default async function AmoriGatewayPlugin({ directory }) {
     },
     tool: {
       amori_gateway: tool({
-        description: "Route a complete request through the Amori gateway and return its verified text and files.",
+        description: "Route a complete request through the Ami gateway and return its verified text and files.",
         args: {
           prompt: tool.schema.string().min(1).describe("The complete user request with necessary context"),
           action: tool.schema.boolean().default(false).describe("True only for explicit file or external-state changes"),
@@ -157,7 +178,7 @@ export default async function AmoriGatewayPlugin({ directory }) {
             filename: path.split("/").pop(),
           }));
           return {
-            title: `Amori: ${request.status || "completed"}`,
+            title: `Ami: ${request.status || "completed"}`,
             output: request.result_text || "Задача завершена без текстового ответа.",
             metadata: {
               request_id: request.id,

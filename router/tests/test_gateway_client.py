@@ -181,6 +181,33 @@ class GatewayClientTests(unittest.TestCase):
             "Hello",
         )
 
+    def test_worker_detects_fast_completion_without_twenty_second_sleep(self):
+        client = mock.Mock()
+        client.get.return_value = {"request": {"status": "running"}}
+        process = mock.Mock(returncode=0)
+        process.communicate.side_effect = [
+            gateway_worker.subprocess.TimeoutExpired("amori-ai", 0.25),
+            ('{"answer":"OK"}', ""),
+        ]
+        with tempfile.TemporaryDirectory() as directory, \
+                mock.patch.object(gateway_worker.subprocess, "Popen", return_value=process), \
+                mock.patch.object(gateway_worker, "heartbeat"), \
+                mock.patch.object(gateway_worker.time, "monotonic", return_value=100.0), \
+                mock.patch.object(gateway_worker.time, "sleep") as sleep:
+            gateway_worker.execute(client, {
+                "id": "request-1", "actor_id": "denis", "cwd": directory,
+                "prompt_text": "Hello", "route": {"provider": "hermes"},
+            })
+
+        sleep.assert_not_called()
+        self.assertEqual(process.communicate.call_args_list, [
+            mock.call(timeout=0.25), mock.call(timeout=0.25),
+        ])
+        self.assertTrue(any(
+            call.args[1] == "/v1/workers/request-1/complete"
+            for call in client.request.call_args_list
+        ))
+
 
 if __name__ == "__main__":
     unittest.main()
