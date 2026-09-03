@@ -89,6 +89,39 @@ class RoutingTests(unittest.TestCase):
         decision = amori_ai.rule_classify("Сделай короткое резюме этого абзаца")
         self.assertEqual(decision.provider, "hermes")
 
+    def test_simple_attachment_read_stays_local(self):
+        decision = amori_ai.rule_classify(
+            "Прочитай вложение и верни только контрольный код документа"
+        )
+        self.assertEqual(decision.provider, "hermes")
+        self.assertEqual(decision.complexity, "simple")
+
+    def test_legal_document_analysis_routes_to_claude(self):
+        decision = amori_ai.rule_classify(
+            "Проведи юридический анализ договора и выдели риски"
+        )
+        self.assertEqual(decision.provider, "claude")
+
+    def test_guardrail_downgrades_simple_attachment_read_to_local(self):
+        decision = amori_ai.Decision(
+            provider="claude",
+            complexity="simple",
+            intent="document",
+            confidence=0.8,
+            reason="test",
+            source="ollama:test",
+            selected_skills=[],
+        )
+
+        guarded = amori_ai.apply_guardrails(
+            "Прочитай вложение и верни только контрольный код документа",
+            decision,
+            "ask",
+        )
+
+        self.assertEqual(guarded.provider, "hermes")
+        self.assertEqual(guarded.complexity, "simple")
+
     def test_calendar_action_uses_native_handler(self):
         decision = amori_ai.Decision(
             provider="hermes",

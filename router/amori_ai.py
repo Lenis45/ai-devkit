@@ -354,7 +354,6 @@ ACTION_WORDS = (
 CODE_WORDS = (
     "код",
     "репозитор",
-    "файл",
     "скрипт",
     "тест",
     "ошиб",
@@ -379,8 +378,9 @@ CLAUDE_WORDS = (
     "продуктов",
     "требован",
     "системный анализ",
-    "документ",
     "спецификац",
+    "договор",
+    "юридическ",
 )
 HIGH_RISK_WORDS = (
     "production",
@@ -439,6 +439,17 @@ IMAGE_GENERATION_WORDS = (
 IMAGE_GENERATION_VERBS = ("сгенерируй", "создай", "нарисуй", "сделай", "generate", "create", "draw")
 IMAGE_GENERATION_NOUNS = ("изображ", "картин", "иллюстрац", "баннер", "обложк", "постер", "image", "picture")
 NATIVE_HANDLERS = {"calendar", "crm", "email", "notes", "content_factory", "project_team"}
+
+
+def is_simple_attachment_read(prompt: str) -> bool:
+    text = prompt.lower()
+    return any(
+        marker in text
+        for marker in (
+            "прочитай влож", "суммируй документ", "резюме документа",
+            "извлеки из", "верни только", "что в документ", "что в файле",
+        )
+    )
 
 
 def is_image_generation_request(prompt: str) -> bool:
@@ -512,8 +523,9 @@ def apply_execution_contract(prompt: str, decision: Decision, mode: str) -> Deci
 def rule_classify(prompt: str) -> Decision:
     lowered = prompt.lower()
     words = re.findall(r"[\w-]+", lowered, flags=re.UNICODE)
+    simple_attachment_read = is_simple_attachment_read(prompt)
     has_action = any(word in lowered for word in ACTION_WORDS)
-    has_code = any(word in lowered for word in CODE_WORDS)
+    has_code = any(word in lowered for word in CODE_WORDS) and not simple_attachment_read
     has_claude = any(word in lowered for word in CLAUDE_WORDS)
     needs_current_info = any(word in lowered for word in CURRENT_INFO_WORDS)
     high_risk = any(word in lowered for word in HIGH_RISK_WORDS)
@@ -610,8 +622,9 @@ def apply_guardrails(
     provider_locked: bool = False,
 ) -> Decision:
     lowered = prompt.lower()
+    simple_attachment_read = is_simple_attachment_read(prompt)
     has_action = any(word in lowered for word in ACTION_WORDS)
-    has_code = any(word in lowered for word in CODE_WORDS)
+    has_code = any(word in lowered for word in CODE_WORDS) and not simple_attachment_read
     has_claude = any(word in lowered for word in CLAUDE_WORDS)
     needs_current_info = any(word in lowered for word in CURRENT_INFO_WORDS)
     is_content_request = any(word in lowered for word in CONTENT_WORDS)
@@ -623,7 +636,20 @@ def apply_guardrails(
     handler = detect_execution_handler(prompt, decision.provider)
     reasons: List[str] = []
 
-    if not provider_locked and needs_system_inspection and decision.provider != "codex":
+    if (
+        not provider_locked
+        and mode == "ask"
+        and simple_attachment_read
+        and not has_code
+        and not has_claude
+        and not needs_current_info
+        and not high_risk
+        and decision.provider != "hermes"
+    ):
+        decision.provider = "hermes"
+        decision.complexity = "simple"
+        reasons.append("simple attachment reading stays local")
+    elif not provider_locked and needs_system_inspection and decision.provider != "codex":
         decision.provider = "codex"
         decision.complexity = "medium"
         reasons.append("live system inspection requires Codex tools")
