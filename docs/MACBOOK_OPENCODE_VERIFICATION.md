@@ -43,6 +43,7 @@ Ollama 0.33.2. These are measured results, not guarantees for every task.
 | TXT through OpenCode and broker | `ORCHID-742`, non-empty input artifact list |
 | Screenshot through OpenCode and broker | Correct `Bun is not defined`, non-empty input artifact list |
 | MCP | Amori, Context7, sequential-thinking connected |
+| Local tool-call protocol | `get_status` returned as a structured tool call in 1.8 seconds; no real action executed |
 
 The gateway tests above were claimed and completed by the MacBook worker.
 The screenshot path includes upload and vision processing before request

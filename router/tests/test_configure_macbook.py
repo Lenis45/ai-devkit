@@ -12,6 +12,13 @@ SPEC.loader.exec_module(configure_macbook)
 
 
 class MacBookConfigurationTests(unittest.TestCase):
+    def test_fast_model_keeps_tool_schema_and_bounded_context(self):
+        template = (MODULE_PATH.parents[1] / "models/qwen3-opencode-nothink.Modelfile").read_text()
+        self.assertIn("PARAMETER num_ctx 8192", template)
+        self.assertIn("range .Tools", template)
+        self.assertIn(".ToolCalls", template)
+        self.assertIn('eq .Role "tool"', template)
+
     def test_opencode_keeps_existing_mcp_and_adds_amori_bridge(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "opencode.jsonc"
